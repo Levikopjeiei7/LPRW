@@ -1,58 +1,42 @@
-# LPRW — Leviko Panel Railway
+# LPRW — Leviko Panel Railway v3
 
-پنل مدیریت پروکسی چندپروتکلی اختصاصی برای Railway.
+پنل اختصاصی چندپروتکلی برای Railway.
 
-## امکانات
+## اصلاح مهم v3
 
-- کانفیگ **VLESS** و **Trojan** روی WebSocket + TLS
-- محدودیت **حجم** و **زمان** برای هر لینک
-- محدودیت تعداد اتصال همزمان
-- **سابسکریپشن** گروهی با هدر userinfo
-- صفحه مصرف عمومی کاربر (`/u/{id}`)
-- QR Code برای هر کانفیگ
-- داشبورد تاریک حرفه‌ای + نمودار ترافیک
-- شمارش اتصالات آنلاین واقعی
-- تنظیمات پنل و تغییر رمز
-- ذخیره پایدار روی Volume
+کانفیگ‌ها مثل معماری استاندارد گیت‌وی‌های async روی Railway ساخته می‌شوند:
 
-## دیپلوی Railway
+- **VLESS**: مسیر WebSocket = `/ws/{uuid}`
+- **Trojan**: مسیر WebSocket = `/trojan-ws/{uuid}`
+- رله TCP واقعی با بافر بزرگ + TCP_NODELAY
+- پاسخ VLESS با پیشوند `\x00\x00` روی اولین پکت
 
-1. این مخزن را روی GitHub آپلود کنید
-2. Railway → New Project → Deploy from GitHub
-3. Settings → Networking → **Generate Domain**
-4. (پیشنهادی) Volume به مسیر `/data`
-5. متغیر محیطی:
-   - `ADMIN_PASSWORD` = رمز قوی (پیش‌فرض: `admin123`)
+## دیپلوی
+
+1. آپلود روی GitHub  
+2. Railway → Deploy from GitHub  
+3. **Generate Domain** سپس یک‌بار **Redeploy**  
+4. Volume → `/data`  
+5. `ADMIN_PASSWORD` را عوض کنید  
+
+داشبورد: `https://DOMAIN/dashboard`  
+پیش‌فرض رمز: `admin123`
 
 ## آدرس‌ها
 
-| مسیر | توضیح |
+| مسیر | کاربرد |
 |------|--------|
-| `/dashboard` | پنل مدیریت |
-| `/sub/{id}` | لینک ساب |
-| `/sub-link/{id}` | ساب تک‌لینک |
-| `/u/{id}` | صفحه مصرف کاربر |
-| `/qr/{id}` | تصویر QR |
+| `/dashboard` | پنل |
+| `/ws/{uuid}` | تونل VLESS |
+| `/trojan-ws/{uuid}` | تونل Trojan |
+| `/sub/{uuid}` | ساب تک (base64) |
+| `/sub-group/{id}` | ساب گروهی |
+| `/u/{uuid}` | صفحه مصرف |
+| `/qr/{uuid}` | QR |
 
-## ساختار
+## کلاینت
 
-```
-LPRW/
-├── main.py
-├── pages.py
-├── protocol/
-│   ├── vless.py
-│   └── trojan.py
-├── requirements.txt
-└── Procfile
-```
-
-## نکات
-
-- بعد از Generate Domain یک بار Redeploy کنید تا `RAILWAY_PUBLIC_DOMAIN` اعمال شود
-- رمز پیش‌فرض را حتماً عوض کنید
-- ترافیک خروجی Railway هزینه دارد (~$0.05/GB)
+v2rayNG / Hiddify / Streisand — کانفیگ را از دکمه «کانفیگ» کپی کنید.
 
 ---
-
-LPRW v2.1 · Leviko Panel
+LPRW v3.0 · Leviko Panel

@@ -1,10 +1,11 @@
 """
-LPRW — Leviko Panel Railway v2.1
-Original multi-protocol proxy panel for Railway.
+LPRW — Leviko Panel Railway v3.0
+Original multi-protocol gateway for Railway.
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -12,7 +13,7 @@ import logging
 import os
 import secrets
 import time
-import uuid
+import uuid as uuidlib
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,7 +33,7 @@ from protocol.trojan import handle_trojan_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "2.1.0"
+VERSION = "3.0.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -80,16 +81,14 @@ _admin = hp(ADMIN_PW)
 LINKS: dict = {}
 SUBS: dict = {}
 SESS: dict = {}
-ONLINE: dict = defaultdict(set)
-STATS = {"bytes": 0, "reqs": 0, "start": time.time()}
+CONNECTIONS: dict = {}  # conn_id -> info
+STATS = {"bytes": 0, "reqs": 0, "errors": 0, "start": time.time()}
 ACT: deque = deque(maxlen=500)
 HOURLY: dict = defaultdict(int)
 SETTINGS = {
     "panel_name": os.environ.get("PANEL_NAME", "LPRW"),
     "announce": "",
     "support_url": "",
-    "path_vless": "/ws",
-    "path_trojan": "/trojan",
 }
 LLOCK = asyncio.Lock()
 SLOCK = asyncio.Lock()
@@ -100,8 +99,8 @@ _pending = False
 def act(msg: str, level: str = "info"):
     ACT.append({"msg": msg, "level": level, "t": now().isoformat()})
 
-def allowed(l: dict) -> bool:
-    if not l.get("active", True):
+def allowed(l: Optional[dict]) -> bool:
+    if not l or not l.get("active", True):
         return False
     if l.get("vol", 0) > 0 and l.get("used", 0) >= l["vol"]:
         return False
@@ -130,7 +129,7 @@ async def load():
             SETTINGS.update(d["settings"])
         STATS["bytes"] = d.get("bytes", 0)
         STATS["reqs"] = d.get("reqs", 0)
-        log.info("state: %s links %s subs", len(LINKS), len(SUBS))
+        log.info("loaded %s links %s subs", len(LINKS), len(SUBS))
     except Exception as e:
         log.warning("load %s", e)
 
@@ -155,7 +154,7 @@ async def schedule_save():
         return
     _pending = True
     try:
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(1.5)
         await save()
     finally:
         _pending = False
@@ -182,14 +181,22 @@ async def auth(req: Request):
     return True
 
 def share(link: dict, h: Optional[str] = None) -> str:
+    """Generate client share link — path includes UUID like production gateways."""
     h = h or host()
     lab = quote(link.get("label") or "LPRW")
     uid = link["id"]
-    if link.get("proto") == "trojan":
-        path = quote(SETTINGS.get("path_trojan", "/trojan"))
-        return f"trojan://{uid}@{h}:443?security=tls&type=ws&host={h}&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
-    path = quote(SETTINGS.get("path_vless", "/ws"))
-    return f"vless://{uid}@{h}:443?encryption=none&security=tls&type=ws&host={h}&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
+    proto = link.get("proto", "vless")
+    if proto == "trojan":
+        path = quote(f"/trojan-ws/{uid}")
+        return (
+            f"trojan://{uid}@{h}:443?security=tls&type=ws&host={h}"
+            f"&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
+        )
+    path = quote(f"/ws/{uid}")
+    return (
+        f"vless://{uid}@{h}:443?encryption=none&security=tls&type=ws&host={h}"
+        f"&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
+    )
 
 def enrich(l: dict, h: str) -> dict:
     o = dict(l)
@@ -199,44 +206,42 @@ def enrich(l: dict, h: str) -> dict:
     o["pct"] = min(100, int(l.get("used", 0) / vol * 100)) if vol > 0 else 0
     o["ok"] = allowed(l)
     o["share"] = share(l, h)
-    o["online"] = len(ONLINE.get(l["id"], set()))
+    o["online"] = sum(1 for c in CONNECTIONS.values() if c.get("uuid") == l["id"])
     o["user_url"] = f"https://{h}/u/{l['id']}"
     o["qr_url"] = f"https://{h}/qr/{l['id']}"
-    o["sub_url"] = f"https://{h}/sub-link/{l['id']}"
+    o["sub_url"] = f"https://{h}/sub/{l['id']}"
     return o
 
-def find_link_by_uuid(uid: str) -> Optional[dict]:
+def find_link(uid: str) -> Optional[dict]:
     if uid in LINKS and allowed(LINKS[uid]):
-        lk = LINKS[uid]
-        return lk if lk.get("proto", "vless") == "vless" else None
-    compact = uid.replace("-", "")
+        return LINKS[uid]
+    compact = uid.replace("-", "").lower()
     for lid, lk in LINKS.items():
-        if lid.replace("-", "") == compact and allowed(lk) and lk.get("proto", "vless") == "vless":
+        if lid.replace("-", "").lower() == compact and allowed(lk):
             return lk
     return None
 
-def find_link_by_pass(pw: str) -> Optional[dict]:
-    if pw in LINKS and allowed(LINKS[pw]) and LINKS[pw].get("proto") == "trojan":
-        return LINKS[pw]
-    compact = pw.replace("-", "")
-    for lid, lk in LINKS.items():
-        if lid.replace("-", "") == compact and allowed(lk) and lk.get("proto") == "trojan":
-            return lk
-    return None
-
-async def on_usage(lid: str, n: int):
+async def on_usage(uid: str, n: int):
     STATS["bytes"] += n
     STATS["reqs"] += 1
     HOURLY[now().strftime("%H:00")] += n
     async with LLOCK:
-        if lid in LINKS:
-            LINKS[lid]["used"] = LINKS[lid].get("used", 0) + n
+        if uid in LINKS:
+            LINKS[uid]["used"] = LINKS[uid].get("used", 0) + n
+        else:
+            compact = uid.replace("-", "").lower()
+            for lid in LINKS:
+                if lid.replace("-", "").lower() == compact:
+                    LINKS[lid]["used"] = LINKS[lid].get("used", 0) + n
+                    break
 
-def reg_online(lid: str, cid: str):
-    ONLINE[lid].add(cid)
+def reg_conn(uid: str) -> str:
+    cid = secrets.token_urlsafe(6)
+    CONNECTIONS[cid] = {"uuid": uid, "at": time.time(), "bytes": 0}
+    return cid
 
-def unreg_online(lid: str, cid: str):
-    ONLINE[lid].discard(cid)
+def unreg_conn(cid: str):
+    CONNECTIONS.pop(cid, None)
 
 # models
 class LoginIn(BaseModel):
@@ -269,8 +274,6 @@ class SettingsIn(BaseModel):
     panel_name: Optional[str] = None
     announce: Optional[str] = None
     support_url: Optional[str] = None
-    path_vless: Optional[str] = None
-    path_trojan: Optional[str] = None
 
 class PasswordIn(BaseModel):
     current: str
@@ -295,7 +298,7 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "online": sum(len(v) for v in ONLINE.values()), "links": len(LINKS), "uptime": int(time.time()-STATS["start"])}
+    return {"ok": True, "online": len(CONNECTIONS), "links": len(LINKS), "uptime": int(time.time()-STATS["start"])}
 
 @app.post("/api/login")
 async def login(body: LoginIn, response: Response):
@@ -323,11 +326,15 @@ async def me(_: bool = Depends(auth)):
 async def stats(_: bool = Depends(auth)):
     return {
         "bytes": STATS["bytes"], "bytes_h": bh(STATS["bytes"]), "reqs": STATS["reqs"],
-        "online": sum(len(v) for v in ONLINE.values()),
+        "online": len(CONNECTIONS),
         "links": len(LINKS), "active_links": sum(1 for l in LINKS.values() if allowed(l)),
         "subs": len(SUBS), "uptime": int(time.time()-STATS["start"]),
         "hourly": dict(sorted(HOURLY.items())[-24:]), "host": host(),
         "version": VERSION, "announce": SETTINGS.get("announce", ""),
+        "connections": [
+            {"id": k, "uuid": v.get("uuid", "")[:8], "sec": int(time.time()-v.get("at", time.time()))}
+            for k, v in list(CONNECTIONS.items())[:50]
+        ],
     }
 
 @app.get("/api/activity")
@@ -344,7 +351,7 @@ async def list_links(_: bool = Depends(auth)):
 
 @app.post("/api/links")
 async def create_link(body: LinkIn, _: bool = Depends(auth)):
-    lid = str(uuid.uuid4())
+    lid = str(uuidlib.uuid4())
     vol = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
     exp = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
     link = {
@@ -381,7 +388,6 @@ async def del_link(lid: str, _: bool = Depends(auth)):
             raise HTTPException(404)
         lab = LINKS[lid].get("label", "")
         del LINKS[lid]
-    ONLINE.pop(lid, None)
     await schedule_save()
     act(f"link deleted: {lab}", "warn")
     return {"ok": True}
@@ -393,7 +399,7 @@ async def list_subs(_: bool = Depends(auth)):
         out = []
         for s in SUBS.values():
             o = dict(s)
-            o["url"] = f"https://{h}/sub/{s['id']}"
+            o["url"] = f"https://{h}/sub-group/{s['id']}"
             o["used_h"] = bh(s.get("used", 0))
             vol = s.get("vol", 0)
             o["vol_h"] = "نامحدود" if vol <= 0 else bh(vol)
@@ -410,7 +416,7 @@ async def create_sub(body: SubIn, _: bool = Depends(auth)):
         SUBS[sid] = sub
     await schedule_save()
     act(f"sub created: {body.name}", "ok")
-    return {"ok": True, "sub": sub, "url": f"https://{host()}/sub/{sid}"}
+    return {"ok": True, "sub": sub, "url": f"https://{host()}/sub-group/{sid}"}
 
 @app.delete("/api/subs/{sid}")
 async def del_sub(sid: str, _: bool = Depends(auth)):
@@ -441,8 +447,32 @@ async def chg_pw(body: PasswordIn, _: bool = Depends(auth)):
     act("password changed", "ok")
     return {"ok": True}
 
-@app.get("/sub/{sid}")
-async def pub_sub(sid: str):
+@app.get("/api/backup")
+async def backup(_: bool = Depends(auth)):
+    return {"links": dict(LINKS), "subs": dict(SUBS), "settings": SETTINGS, "version": VERSION}
+
+# Public sub single (base64 like many clients expect)
+@app.get("/sub/{lid}")
+async def pub_sub_one(lid: str):
+    async with LLOCK:
+        lk = LINKS.get(lid)
+        if not lk or not allowed(lk):
+            raise HTTPException(404)
+        text = share(lk, host())
+    content = base64.b64encode(text.encode()).decode()
+    used = lk.get("used", 0)
+    total = lk.get("vol", 0)
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "profile-update-interval": "6",
+            "subscription-userinfo": f"upload=0; download={used}; total={total}; expire=0",
+        },
+    )
+
+@app.get("/sub-group/{sid}")
+async def pub_sub_group(sid: str):
     async with SLOCK:
         sub = SUBS.get(sid)
         if not sub:
@@ -455,8 +485,6 @@ async def pub_sub(sid: str):
                 raise
             except Exception:
                 pass
-        if sub.get("vol", 0) > 0 and sub.get("used", 0) >= sub["vol"]:
-            raise HTTPException(403, "quota")
         h = host()
         lines = []
         async with LLOCK:
@@ -465,19 +493,16 @@ async def pub_sub(sid: str):
                 lk = LINKS.get(i)
                 if lk and allowed(lk):
                     lines.append(share(lk, h))
-    return PlainTextResponse("\n".join(lines), headers={
-        "profile-update-interval": "6",
-        "subscription-userinfo": f"upload=0; download={sub.get('used',0)}; total={sub.get('vol',0)}; expire=0",
-        "content-disposition": f'attachment; filename="{sub.get("name","lprw")}.txt"',
-    })
-
-@app.get("/sub-link/{lid}")
-async def sub_one(lid: str):
-    async with LLOCK:
-        lk = LINKS.get(lid)
-        if not lk or not allowed(lk):
-            raise HTTPException(404)
-        return PlainTextResponse(share(lk, host()))
+    raw = "\n".join(lines)
+    content = base64.b64encode(raw.encode()).decode()
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "profile-update-interval": "6",
+            "subscription-userinfo": f"upload=0; download={sub.get('used',0)}; total={sub.get('vol',0)}; expire=0",
+        },
+    )
 
 @app.get("/qr/{lid}")
 async def qr(lid: str):
@@ -506,7 +531,7 @@ async def user_page(lid: str):
     return HTMLResponse(f"""<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{d['label']}</title>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
-<style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:Vazirmatn,sans-serif;background:#06080f;color:#eef0f6;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background-image:radial-gradient(ellipse at 30% 20%,#1a1540 0%,transparent 50%)}}
+<style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:Vazirmatn,sans-serif;background:#05070d;color:#f1f3f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background-image:radial-gradient(ellipse at 30% 20%,#1a1540 0%,transparent 50%)}}
 .card{{background:rgba(16,18,30,.92);border:1px solid rgba(99,102,241,.3);border-radius:24px;padding:36px;max-width:420px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.5)}}
 h1{{font-size:1.35rem;margin-bottom:10px}}.badge{{display:inline-block;padding:5px 14px;border-radius:99px;font-size:.78rem;font-weight:600;margin-bottom:18px}}
 .on{{background:rgba(34,197,94,.15);color:#4ade80}}.off{{background:rgba(239,68,68,.15);color:#f87171}}
@@ -521,19 +546,29 @@ h1{{font-size:1.35rem;margin-bottom:10px}}.badge{{display:inline-block;padding:5
 <div class="row"><span>انقضا</span><strong>{exp}</strong></div>
 <div class="foot">LPRW · Leviko Panel</div></div></body></html>""")
 
-@app.websocket("/ws")
-async def ws_vless(ws: WebSocket):
-    await ws.accept()
-    await handle_vless_ws(ws, find_link_by_uuid, on_usage, reg_online, unreg_online)
+# ── CRITICAL: path includes UUID (same architecture as working gateways) ──
+@app.websocket("/ws/{uid}")
+async def ws_vless(ws: WebSocket, uid: str):
+    def is_ok(u):
+        return find_link(u)
+    await handle_vless_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
     await schedule_save()
 
-@app.websocket("/trojan")
-async def ws_trojan(ws: WebSocket):
-    await ws.accept()
-    await handle_trojan_ws(ws, find_link_by_pass, on_usage, reg_online, unreg_online)
+@app.websocket("/trojan-ws/{uid}")
+async def ws_trojan(ws: WebSocket, uid: str):
+    def is_ok(u):
+        lk = find_link(u)
+        if lk and lk.get("proto") == "trojan":
+            return lk
+        # allow if link exists as trojan even when path password matches id
+        return lk if lk and lk.get("proto", "vless") == "trojan" else (find_link(u) if find_link(u) and find_link(u).get("proto") == "trojan" else None)
+    # simpler:
+    def is_ok2(u):
+        lk = find_link(u)
+        return lk if lk and lk.get("proto") == "trojan" else None
+    await handle_trojan_ws(ws, uid, is_ok2, on_usage, reg_conn, unreg_conn)
     await schedule_save()
 
-# UI loaded from pages module
 from pages import DASHBOARD  # noqa: E402
 
 @app.get("/dashboard", response_class=HTMLResponse)
