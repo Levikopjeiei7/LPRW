@@ -22,7 +22,7 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;z-index:2}
 .login-card{width:100%;max-width:460px;background:linear-gradient(165deg,var(--s2),var(--s1));border:1px solid var(--bd2);border-radius:28px;padding:48px 40px;box-shadow:var(--shadow);position:relative;overflow:hidden;animation:rise .55s ease}
 .login-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--g1)}
-.brand-mark{width:64px;height:64px;border-radius:18px;background:var(--g1);display:grid;place-items:center;font-weight:900;font-size:1.35rem;color:#fff;margin-bottom:22px;box-shadow:0 16px 40px rgba(99,102,241,.45)}
+.brand-mark{width:64px;height:64px;border-radius:18px;object-fit:cover;display:block;margin-bottom:22px;box-shadow:0 16px 40px rgba(99,102,241,.45);border:2px solid rgba(255,255,255,.12)}
 .login-card h1{font-size:1.85rem;font-weight:800}.login-card .sub{color:var(--mu);margin:8px 0 28px;font-size:.92rem}
 .field{margin-bottom:16px}.field label{display:block;font-size:.78rem;color:var(--mu);margin-bottom:8px;font-weight:600}
 .field input,.field select{width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--bd2);background:rgba(0,0,0,.25);outline:none}
@@ -53,7 +53,7 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 }
 .side{background:linear-gradient(180deg,var(--s2),var(--s1));border-left:1px solid var(--bd);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
 .side .logo{display:flex;align-items:center;gap:12px;padding:8px 10px 20px;border-bottom:1px solid var(--bd);margin-bottom:12px}
-.side .logo .mk{width:42px;height:42px;border-radius:12px;background:var(--g1);display:grid;place-items:center;font-weight:900;color:#fff}
+.side .logo .mk{width:42px;height:42px;border-radius:12px;object-fit:cover;display:block;border:1px solid rgba(255,255,255,.1)}
 .side .logo h2{font-size:1.05rem;font-weight:800}.side .logo small{color:var(--mu);font-size:.72rem}
 .nav-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;color:var(--mu);cursor:pointer;font-weight:600;font-size:.9rem;border:1px solid transparent}
 .nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}.nav-item.active{background:rgba(99,102,241,.15);color:var(--pr3);border-color:rgba(99,102,241,.25)}
@@ -767,7 +767,7 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
   .mob-nav { display: none !important; }
 }
 </style></head><body>
-<div id="login"><div class="login-card"><div class="brand-mark">LP</div><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · ورود مدیر</p>
+<div id="login"><div class="login-card"><img class="brand-mark" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="64" height="64"><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · ورود مدیر</p>
 <div class="field"><label>نام کاربری</label><input id="user" autocomplete="username" placeholder="admin"></div>
 <div class="field"><label>رمز عبور</label><input id="pw" type="password" autocomplete="current-password" placeholder="••••••"></div>
 <button class="btn btn-p btn-block" id="btn-login">ورود به پنل</button>
@@ -777,10 +777,9 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <div class="side-backdrop" id="backdrop"></div>
 <div class="shell">
 <aside class="side" id="side">
-<div class="logo"><div class="mk">LP</div><div><h2>LPRW</h2><small>Leviko Panel</small></div></div>
+<div class="logo"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="42" height="42"><div><h2>LPRW</h2><small>Leviko Panel</small></div></div>
 <div class="nav-item active" data-tab="dash">داشبورد</div>
 <div class="nav-item" data-tab="links">لینک‌ها</div>
-<div class="nav-item" data-tab="subs">سابسکریپشن</div>
 <div class="nav-item" data-tab="online">اتصالات زنده</div>
 <div class="nav-item" data-tab="logs">فعالیت‌ها</div>
 <div class="nav-item" data-tab="settings">تنظیمات</div>
@@ -788,13 +787,13 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 </aside>
 <main class="main">
 <div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="burger" id="burger" type="button">☰</button><h1 id="page-title">داشبورد</h1></div>
-<div class="acts"><button class="btn btn-p" id="btn-nl">+ لینک جدید</button><button class="btn" id="btn-ns">+ ساب</button></div></div>
+<div class="acts"><button class="btn btn-p" id="btn-nl">+ لینک جدید</button></div></div>
 <section id="tab-dash">
 <div class="kpis">
 <div class="kpi"><div class="t">لینک‌های فعال</div><div class="v" id="k-links">—</div><div class="s">کل لینک‌ها</div></div>
 <div class="kpi"><div class="t">آنلاین</div><div class="v" id="k-online">—</div><div class="s">اتصالات همزمان</div></div>
 <div class="kpi"><div class="t">ترافیک کل</div><div class="v" id="k-bytes">—</div><div class="s">مصرف تجمیعی</div></div>
-<div class="kpi"><div class="t">ساب‌ها</div><div class="v" id="k-subs">—</div><div class="s">گروه‌های اشتراک</div></div>
+<div class="kpi"><div class="t">درخواست‌ها</div><div class="v" id="k-req2">—</div><div class="s">شمارش ترافیک</div></div>
 </div>
 <div class="grid-2">
 <div class="panel"><div class="panel-h"><h3>ترافیک ساعتی</h3></div><div class="chart-box"><canvas id="chart"></canvas></div></div>
@@ -807,8 +806,6 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 </section>
 <section id="tab-links" class="hidden"><div class="panel"><div class="panel-h"><h3>مدیریت لینک‌ها</h3><span class="chip" id="links-count">0</span></div>
 <div style="overflow:auto"><table><thead><tr><th>نام</th><th>پروتکل</th><th>مصرف</th><th>حجم</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="links-tb"></tbody></table></div></div></section>
-<section id="tab-subs" class="hidden"><div class="panel"><div class="panel-h"><h3>سابسکریپشن‌ها</h3></div>
-<div style="overflow:auto"><table><thead><tr><th>نام</th><th>آدرس</th><th>حجم</th><th>عملیات</th></tr></thead><tbody id="subs-tb"></tbody></table></div></div></section>
 <section id="tab-online" class="hidden"><div class="panel"><div class="panel-h"><h3>اتصالات زنده</h3></div><div id="online-grid"></div></div></section>
 <section id="tab-logs" class="hidden"><div class="panel"><div class="panel-h"><h3>لاگ فعالیت</h3></div><ul id="act-list"></ul></div></section>
 <section id="tab-settings" class="hidden"><div class="panel"><div class="panel-h"><h3>تنظیمات</h3></div>
@@ -832,26 +829,17 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <div class="field"><label>یادداشت</label><input id="nl-r"></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-link')">لغو</button><button class="btn btn-p" id="btn-cl">ساخت</button></div>
 </div></div>
-<div class="modal-bg" id="m-sub"><div class="modal"><h3>ساب جدید</h3>
-<div class="field"><label>نام</label><input id="ns-n"></div>
-<div class="field"><label>شناسه لینک‌ها (با کاما)</label><input id="ns-i" placeholder="uuid1,uuid2"></div>
-<div class="form-row"><div class="field"><label>حجم GB</label><input id="ns-v" type="number" value="0"></div>
-<div class="field"><label>روز</label><input id="ns-d" type="number" value="0"></div></div>
-<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-sub')">لغو</button><button class="btn btn-p" id="btn-cs">ساخت</button></div>
-</div></div>
 
 <div class="mob-nav" id="mob-nav">
   <button type="button" data-tab="dash" class="active">خانه</button>
   <button type="button" data-tab="links">لینک</button>
-  <button type="button" data-tab="subs">ساب</button>
-  <button type="button" data-tab="online">آنلاین</button>
+    <button type="button" data-tab="online">آنلاین</button>
   <button type="button" data-tab="settings">تنظیمات</button>
 </div>
 
 <div class="bottom-nav" id="bottom-nav">
 <button type="button" data-tab="dash" class="active"><span>🏠</span>خانه</button>
 <button type="button" data-tab="links"><span>🔗</span>لینک</button>
-<button type="button" data-tab="subs"><span>📡</span>ساب</button>
 <button type="button" data-tab="online"><span>🟢</span>آنلاین</button>
 <button type="button" data-tab="settings"><span>⚙️</span>تنظیمات</button>
 </div>
@@ -871,10 +859,10 @@ $('#btn-theme').onclick=()=>{const cur=document.documentElement.getAttribute('da
 function goTab(tab){
   $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $$('#bottom-nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
-  ['dash','links','subs','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});
-  const titles={dash:'داشبورد',links:'لینک‌ها',subs:'سابسکریپشن',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};
+  ['dash','links','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});
+  const titles={dash:'داشبورد',links:'لینک‌ها',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};
   $('#page-title').textContent=titles[tab]||'';
-  if(tab==='links')loadLinks();if(tab==='subs')loadSubs();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();
+  if(tab==='links')loadLinks();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();
   $('#side')?.classList.remove('open');$('#backdrop')?.classList.remove('show');
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -886,17 +874,15 @@ $('#btn-login').onclick=async()=>{try{await api('/api/login',{method:'POST',body
 $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#btn-login').click()};
 $('#user').onkeydown=e=>{if(e.key==='Enter')$('#pw').focus()};
 $('#btn-out').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
-async function loadDash(){try{const s=await api('/api/stats');$('#k-links').textContent=s.links??0;$('#k-online').textContent=s.online??0;$('#k-bytes').textContent=s.bytes_h||s.bytes||'—';$('#k-subs').textContent=s.subs??0;$('#k-up').textContent=s.uptime_h||(s.uptime+'s');$('#k-host').textContent=s.host||location.host;$('#k-req').textContent=s.reqs??0;const labels=Object.keys(s.hourly||{});const data=Object.values(s.hourly||{});const ctx=$('#chart');if(chart)chart.destroy();chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'ترافیک',data,borderColor:'#818cf8',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8b93a8'}},y:{ticks:{color:'#8b93a8'}}},maintainAspectRatio:false}})}catch(e){}}
+async function loadDash(){try{const s=await api('/api/stats');$('#k-links').textContent=s.links??0;$('#k-online').textContent=s.online??0;$('#k-bytes').textContent=s.bytes_h||s.bytes||'—';$('#k-req2').textContent=s.reqs??0;$('#k-up').textContent=s.uptime_h||(s.uptime+'s');$('#k-host').textContent=s.host||location.host;$('#k-req').textContent=s.reqs??0;const labels=Object.keys(s.hourly||{});const data=Object.values(s.hourly||{});const ctx=$('#chart');if(chart)chart.destroy();chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'ترافیک',data,borderColor:'#818cf8',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8b93a8'}},y:{ticks:{color:'#8b93a8'}}},maintainAspectRatio:false}})}catch(e){}}
 async function loadLinks(){const links=await api('/api/links');$('#links-count').textContent=links.length;$('#links-tb').innerHTML=links.map(l=>`<tr><td><strong>${esc(l.label)}</strong><div style="font-size:.7rem;color:var(--mu)">${esc(l.id).slice(0,8)}…</div></td><td>${esc((l.proto||'vless').toUpperCase())}</td><td>${esc(l.used_h)}</td><td>${esc(l.vol_h)}</td><td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span></td><td style="white-space:nowrap"><button class="chip" data-copy="${esc(l.share)}">کپی</button> <button class="chip" data-sub="${esc(l.sub_url)}">ساب</button> <button class="chip" data-user="${esc(l.user_url)}">پنل کاربر</button> <button class="chip" data-rst="${esc(l.id)}">ریست</button> <button class="btn btn-d btn-sm" data-del="${esc(l.id)}">حذف</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">لینکی نیست</div></td></tr>';$('#links-tb').onclick=async e=>{const t=e.target.closest('[data-copy],[data-sub],[data-user],[data-rst],[data-del]');if(!t)return;if(t.dataset.copy)copy(t.dataset.copy);if(t.dataset.sub)copy(t.dataset.sub);if(t.dataset.user){copy(t.dataset.user);window.open(t.dataset.user,'_blank')}if(t.dataset.rst){await api('/api/links/'+t.dataset.rst,{method:'PATCH',body:{reset_usage:true}});toast('ریست شد');loadLinks()}if(t.dataset.del&&confirm('حذف شود؟')){await api('/api/links/'+t.dataset.del,{method:'DELETE'});loadLinks();loadDash()}}}
-async function loadSubs(){const subs=await api('/api/subs');$('#subs-tb').innerHTML=subs.map(s=>`<tr><td><strong>${esc(s.name)}</strong></td><td><code style="font-size:.72rem;word-break:break-all">${esc(s.url)}</code> <button class="chip" data-copy="${esc(s.url)}">کپی</button></td><td>${esc(s.vol_h)}</td><td><button class="btn btn-d btn-sm" data-dels="${esc(s.id)}">حذف</button></td></tr>`).join('')||'<tr><td colspan="4"><div class="empty">سابی نیست</div></td></tr>';$('#subs-tb').onclick=async e=>{const t=e.target.closest('[data-copy],[data-dels]');if(!t)return;if(t.dataset.copy)copy(t.dataset.copy);if(t.dataset.dels&&confirm('حذف؟')){await api('/api/subs/'+t.dataset.dels,{method:'DELETE'});loadSubs()}}}
 async function loadOnline(){const s=await api('/api/stats');const list=s.connections||[];$('#online-grid').innerHTML=list.length?list.map(c=>`<div class="conn-card"><div class="t">ID</div><div class="v">${esc(c.id)}</div><div class="t" style="margin-top:8px">UUID</div><div class="v">${esc(c.uuid)}</div><div class="t" style="margin-top:8px">مدت</div><div class="v">${esc(c.sec)} ث</div></div>`).join(''):'<div class="empty" style="grid-column:1/-1">اتصال فعالی نیست</div>'}
 async function loadAct(){const list=await api('/api/activity');$('#act-list').innerHTML=list.map(a=>{const lv=a.level==='ok'?'ok':a.level==='warn'?'warn':'info';return `<li><span class="tm">${esc((a.t||'').slice(11,19))}</span><span class="dot dot-${lv}"></span><span>${esc(a.msg)}</span></li>`}).join('')||'<li style="color:var(--mu);padding:24px">خالی</li>'}
 async function loadSettings(){try{const s=await api('/api/settings');$('#st-name').value=s.panel_name||'';$('#st-ann').value=s.announce||'';$('#st-sup').value=s.support_url||''}catch{}}
 $('#btn-save-st').onclick=async()=>{await api('/api/settings',{method:'POST',body:{panel_name:$('#st-name').value,announce:$('#st-ann').value,support_url:$('#st-sup').value}});toast('ذخیره شد')};
 $('#btn-pw').onclick=async()=>{try{await api('/api/password',{method:'POST',body:{current:$('#pw-cur').value,new_password:$('#pw-new').value}});toast('رمز عوض شد')}catch(e){toast(e.message||'خطا')}};
-$('#btn-nl').onclick=()=>openM('m-link');$('#btn-ns').onclick=()=>openM('m-sub');
+$('#btn-nl').onclick=()=>openM('m-link');
 $('#btn-cl').onclick=async()=>{try{const r=await api('/api/links',{method:'POST',body:{label:$('#nl-n').value.trim()||'Link',proto:$('#nl-p').value,volume_gb:+$('#nl-v').value||0,days:+$('#nl-d').value||0,max_conn:+$('#nl-c').value||0,remark:$('#nl-r').value||''}});closeM('m-link');toast('ساخته شد');if(r.link?.share)copy(r.link.share);loadLinks();loadDash()}catch(e){toast(e.message)}};
-$('#btn-cs').onclick=async()=>{try{const ids=$('#ns-i').value.split(',').map(x=>x.trim()).filter(Boolean);const r=await api('/api/subs',{method:'POST',body:{name:$('#ns-n').value.trim()||'Sub',volume_gb:+$('#ns-v').value||0,days:+$('#ns-d').value||0,link_ids:ids}});closeM('m-sub');toast('ساب ساخته شد');copy(r.url);loadSubs()}catch(e){toast(e.message)}};
 async function loadAll(){await loadDash();try{await api('/api/me')}catch{showLogin();return}}
 (async()=>{try{await api('/api/me');showApp()}catch{showLogin()}})();
 
@@ -955,7 +941,7 @@ body::before{content:"";position:fixed;width:520px;height:520px;top:-100px;right
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--bd);padding:12px 18px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transition:.25s;z-index:9;font-weight:700}.toast.show{opacity:1}
 </style></head><body>
 <div class="wrap">
-<div class="top"><div class="brand"><div class="mk">LP</div><div><h1>LPRW User</h1><small>پنل مصرف اختصاصی</small></div></div>
+<div class="top"><div class="brand"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="48" height="48"><div><h1>LPRW User</h1><small>پنل مصرف اختصاصی</small></div></div>
 <button class="theme" id="theme" type="button">☀ / ☾ حالت روز و شب</button></div>
 <div class="hero"><div class="name">{{LABEL}}</div><span class="badge {{STATUS_CLASS}}">{{STATUS}}</span>
 <div class="bar"><i></i></div>
