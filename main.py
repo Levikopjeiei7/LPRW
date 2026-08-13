@@ -181,22 +181,30 @@ async def auth(req: Request):
     return True
 
 def share(link: dict, h: Optional[str] = None) -> str:
-    """Generate client share link — path includes UUID like production gateways."""
+    """Share link — params encoded like production gateways (alpn=h2)."""
     h = h or host()
     lab = quote(link.get("label") or "LPRW")
     uid = link["id"]
     proto = link.get("proto", "vless")
     if proto == "trojan":
-        path = quote(f"/trojan-ws/{uid}")
-        return (
-            f"trojan://{uid}@{h}:443?security=tls&type=ws&host={h}"
-            f"&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
+        path = f"/trojan-ws/{uid}"
+        q = "&".join(
+            f"{k}={quote(str(v), safe='')}"
+            for k, v in {
+                "security": "tls", "type": "ws", "host": h,
+                "path": path, "sni": h, "fp": "chrome", "alpn": "h2",
+            }.items()
         )
-    path = quote(f"/ws/{uid}")
-    return (
-        f"vless://{uid}@{h}:443?encryption=none&security=tls&type=ws&host={h}"
-        f"&path={path}&sni={h}&fp=chrome&alpn=h2,http/1.1#{lab}"
+        return f"trojan://{uid}@{h}:443?{q}#{lab}"
+    path = f"/ws/{uid}"
+    q = "&".join(
+        f"{k}={quote(str(v), safe='')}"
+        for k, v in {
+            "encryption": "none", "security": "tls", "type": "ws", "host": h,
+            "path": path, "sni": h, "fp": "chrome", "alpn": "h2",
+        }.items()
     )
+    return f"vless://{uid}@{h}:443?{q}#{lab}"
 
 def enrich(l: dict, h: str) -> dict:
     o = dict(l)
@@ -221,34 +229,28 @@ def find_link(uid: str) -> Optional[dict]:
             return lk
     return None
 
-async def on_usage(uid: str, n: int) -> bool:
-    """Account traffic. Returns False if quota exceeded / disabled.
-    Designed for batched calls (QuotaGate) — not every frame.
-    """
-    # lock-free global counters (single-threaded asyncio)
+def on_usage(uid: str, n: int) -> bool:
+    """SYNC lock-free traffic account. Safe under asyncio single-thread."""
     STATS["bytes"] += n
     STATS["reqs"] += 1
-    hour_key = time.strftime("%H:00", time.localtime())
-    HOURLY[hour_key] += n
-
-    async with LLOCK:
-        link = LINKS.get(uid)
-        if link is None:
-            compact = uid.replace("-", "").lower()
-            for lid, lk in LINKS.items():
-                if lid.replace("-", "").lower() == compact:
-                    link = lk
-                    uid = lid
-                    break
-        if link is None:
-            return False
-        if not allowed(link):
-            return False
-        link["used"] = link.get("used", 0) + n
-        # re-check after increment
-        if link.get("vol", 0) > 0 and link["used"] >= link["vol"]:
-            return False
+    HOURLY[time.strftime("%H:00")] += n
+    link = LINKS.get(uid)
+    if link is None:
+        compact = uid.replace("-", "").lower()
+        for lid, lk in LINKS.items():
+            if lid.replace("-", "").lower() == compact:
+                link = lk
+                break
+    if link is None:
+        return False
+    if not link.get("active", True):
+        return False
+    link["used"] = link.get("used", 0) + n
+    vol = link.get("vol", 0)
+    if vol > 0 and link["used"] >= vol:
+        return False
     return True
+
 
 def reg_conn(uid: str) -> str:
     cid = secrets.token_urlsafe(6)
