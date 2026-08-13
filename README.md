@@ -1,8 +1,8 @@
-# LPRW — Leviko Panel Railway v3
+# LPRW — Leviko Panel Railway V 1.0.1
 
 پنل اختصاصی چندپروتکلی برای Railway.
 
-## اصلاح مهم v3
+## اصلاح مهم V1.0.1
 
 کانفیگ‌ها مثل معماری استاندارد گیت‌وی‌های async روی Railway ساخته می‌شوند:
 
@@ -19,8 +19,9 @@
 4. Volume → `/data`  
 5. `ADMIN_PASSWORD` را عوض کنید  
 
-داشبورد: `https://DOMAIN/dashboard`  
-پیش‌فرض رمز: `admin123`
+داشبورد: `https://DOMAIN/dashboard`
+یوزرنیم پیش فرض: `admin`
+پیش‌فرض رمز: `12345`
 
 ## آدرس‌ها
 
@@ -39,4 +40,4 @@
 v2rayNG / Hiddify / Streisand — کانفیگ را از دکمه «کانفیگ» کپی کنید.
 
 ---
-LPRW v3.0 · Leviko Panel
+LPRW V 1.0.1 · Leviko Panel
