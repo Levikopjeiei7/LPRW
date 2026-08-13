@@ -1,4 +1,4 @@
-"""LPRW Trojan high-throughput relay."""
+"""LPRW Trojan relay — aligned with production WS gateway behavior."""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +7,7 @@ import socket
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from protocol.vless import AdaptiveFlow, QuotaGate, RELAY_BUF, tune_socket
+from protocol.vless import RELAY_BUF, WRITE_HIGH_WATER, QuotaGate, open_tcp, tune_socket
 
 logger = logging.getLogger("LPRW.trojan")
 
@@ -25,24 +25,24 @@ def parse_trojan_header(data: bytes):
     atyp = rest[1]
     pos = 2
     if atyp == 0x01:
-        address = socket.inet_ntop(socket.AF_INET, rest[pos : pos + 4])
+        address = socket.inet_ntop(socket.AF_INET, rest[pos:pos + 4])
         pos += 4
     elif atyp == 0x03:
         n = rest[pos]
         pos += 1
-        address = rest[pos : pos + n].decode("utf-8", "ignore")
+        address = rest[pos:pos + n].decode("utf-8", "ignore")
         pos += n
     elif atyp == 0x04:
-        address = socket.inet_ntop(socket.AF_INET6, rest[pos : pos + 16])
+        address = socket.inet_ntop(socket.AF_INET6, rest[pos:pos + 16])
         pos += 16
     else:
         raise ValueError(f"bad atyp {atyp}")
-    port = int.from_bytes(rest[pos : pos + 2], "big")
+    port = int.from_bytes(rest[pos:pos + 2], "big")
     pos += 2
     return password, cmd, address, port, rest[pos:]
 
 
-async def relay_ws_to_tcp(ws, writer, gate, flow):
+async def relay_ws_to_tcp(ws, writer, gate):
     try:
         while True:
             msg = await ws.receive()
@@ -58,8 +58,8 @@ async def relay_ws_to_tcp(ws, writer, gate, flow):
                     pass
                 break
             writer.write(data)
-            if flow.should_drain(writer.transport.get_write_buffer_size()):
-                await flow.drain(writer)
+            if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
+                await writer.drain()
     except (WebSocketDisconnect, Exception):
         pass
     finally:
@@ -107,29 +107,26 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
             return
 
         _, cmd, address, port, payload = parse_trojan_header(first_chunk)
-
         gate = QuotaGate(password, on_usage)
-        flow = AdaptiveFlow()
-        await gate.add(len(first_chunk))
+        if not await gate.add(len(first_chunk)):
+            await ws.close(code=1008, reason="quota")
+            return
 
         if cmd != 0x01:
             await ws.close(code=1008, reason="udp not supported")
             return
 
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(address, port),
-            timeout=10.0,
-        )
+        reader, writer = await open_tcp(address, port, timeout=10.0)
         tune_socket(writer)
 
         if payload:
             writer.write(payload)
-            await flow.drain(writer)
+            await writer.drain()
             await gate.add(len(payload))
 
         done, pending = await asyncio.wait(
             {
-                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate, flow)),
+                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate)),
                 asyncio.create_task(relay_tcp_to_ws(ws, reader, gate)),
             },
             return_when=asyncio.FIRST_COMPLETED,
