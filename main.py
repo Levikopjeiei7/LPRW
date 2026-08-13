@@ -57,7 +57,8 @@ def _secret() -> str:
         return secrets.token_urlsafe(40)
 
 SECRET = _secret()
-ADMIN_PW = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PW = os.environ.get("ADMIN_PASSWORD", "12345")
 PORT = int(os.environ.get("PORT", 8000))
 
 def host() -> str:
@@ -262,6 +263,7 @@ def unreg_conn(cid: str):
 
 # models
 class LoginIn(BaseModel):
+    username: str = "admin"
     password: str
 
 class LinkIn(BaseModel):
@@ -319,12 +321,13 @@ async def health():
 
 @app.post("/api/login")
 async def login(body: LoginIn, response: Response):
-    if hp(body.password) != _admin:
-        raise HTTPException(401, "wrong password")
+    user_ok = (body.username or "").strip().lower() == ADMIN_USER.lower()
+    if not user_ok or hp(body.password) != _admin:
+        raise HTTPException(401, "wrong username or password")
     tok = await new_sess()
     response.set_cookie(COOKIE, tok, httponly=True, max_age=TTL, samesite="lax")
-    act("admin login", "ok")
-    return {"ok": True}
+    act(f"admin login ({body.username})", "ok")
+    return {"ok": True, "user": ADMIN_USER}
 
 @app.post("/api/logout")
 async def logout(request: Request, response: Response):
@@ -346,6 +349,7 @@ async def stats(_: bool = Depends(auth)):
         "online": len(CONNECTIONS),
         "links": len(LINKS), "active_links": sum(1 for l in LINKS.values() if allowed(l)),
         "subs": len(SUBS), "uptime": int(time.time()-STATS["start"]),
+        "uptime_h": (lambda s: f"{s//3600:02d}:{(s%3600)//60:02d}:{s%60:02d}")(int(time.time()-STATS["start"])),
         "hourly": dict(sorted(HOURLY.items())[-24:]), "host": host(),
         "version": VERSION, "announce": SETTINGS.get("announce", ""),
         "connections": [
@@ -541,27 +545,29 @@ async def user_page(lid: str):
         if not lk:
             raise HTTPException(404)
         d = enrich(lk, host())
-    pct = d["pct"]
-    st = "فعال" if d["ok"] else "غیرفعال"
-    bc = "on" if d["ok"] else "off"
-    exp = (d.get("exp") or "—")[:10]
-    return HTMLResponse(f"""<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{d['label']}</title>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet">
-<style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:Vazirmatn,sans-serif;background:#05070d;color:#f1f3f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background-image:radial-gradient(ellipse at 30% 20%,#1a1540 0%,transparent 50%)}}
-.card{{background:rgba(16,18,30,.92);border:1px solid rgba(99,102,241,.3);border-radius:24px;padding:36px;max-width:420px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.5)}}
-h1{{font-size:1.35rem;margin-bottom:10px}}.badge{{display:inline-block;padding:5px 14px;border-radius:99px;font-size:.78rem;font-weight:600;margin-bottom:18px}}
-.on{{background:rgba(34,197,94,.15);color:#4ade80}}.off{{background:rgba(239,68,68,.15);color:#f87171}}
-.bar{{height:12px;background:#1a1f2e;border-radius:99px;overflow:hidden;margin:16px 0}}.fill{{height:100%;width:{pct}%;background:linear-gradient(90deg,#6366f1,#a855f7);border-radius:99px}}
-.row{{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.9rem}}.row span{{color:#94a3b8}}
-.foot{{margin-top:20px;text-align:center;font-size:.7rem;color:#475569}}</style></head><body><div class="card">
-<h1>{d['label']}</h1><span class="badge {bc}">{st}</span><div class="bar"><div class="fill"></div></div>
-<div class="row"><span>مصرف</span><strong>{d['used_h']}</strong></div>
-<div class="row"><span>حجم</span><strong>{d['vol_h']}</strong></div>
-<div class="row"><span>پروتکل</span><strong>{d['proto'].upper()}</strong></div>
-<div class="row"><span>آنلاین</span><strong>{d['online']}</strong></div>
-<div class="row"><span>انقضا</span><strong>{exp}</strong></div>
-<div class="foot">LPRW · Leviko Panel</div></div></body></html>""")
+    from pages import USER_PORTAL
+    exp = (d.get("exp") or "—")
+    if exp and exp != "—":
+        exp = exp[:19].replace("T", " ")
+    html = (
+        USER_PORTAL
+        .replace("{{LABEL}}", d.get("label") or "LPRW")
+        .replace("{{STATUS}}", "فعال" if d["ok"] else "غیرفعال")
+        .replace("{{STATUS_CLASS}}", "ok" if d["ok"] else "bad")
+        .replace("{{USED}}", d["used_h"])
+        .replace("{{VOL}}", d["vol_h"])
+        .replace("{{PCT}}", str(d["pct"]))
+        .replace("{{PROTO}}", (d.get("proto") or "vless").upper())
+        .replace("{{ONLINE}}", str(d["online"]))
+        .replace("{{EXP}}", exp)
+        .replace("{{SHARE}}", d["share"])
+        .replace("{{SUB}}", d["sub_url"])
+        .replace("{{QR}}", d["qr_url"])
+        .replace("{{REMARK}}", d.get("remark") or "")
+        .replace("{{HOST}}", host())
+        .replace("{{VERSION}}", VERSION)
+    )
+    return HTMLResponse(html)
 
 # ── CRITICAL: path includes UUID (same architecture as working gateways) ──
 @app.websocket("/ws/{uid}")
@@ -586,7 +592,7 @@ async def ws_trojan(ws: WebSocket, uid: str):
     await handle_trojan_ws(ws, uid, is_ok2, on_usage, reg_conn, unreg_conn)
     asyncio.create_task(schedule_save())
 
-from pages import DASHBOARD  # noqa: E402
+from pages import DASHBOARD, USER_PORTAL  # noqa: E402
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
