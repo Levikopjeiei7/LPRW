@@ -1,6 +1,8 @@
 """
-LPRW VLESS — high-throughput relay (batched quota, large buffers).
-Path auth: /ws/{uuid}
+LPRW VLESS high-throughput relay.
+- AdaptiveFlow (AIMD drain)
+- Batched quota, lock-free hot path
+- Large OS socket buffers + TCP_NODELAY
 """
 from __future__ import annotations
 
@@ -13,15 +15,19 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("LPRW.vless")
 
-# Match production gateway tuning
-RELAY_BUF = 1024 * 1024          # 1 MB read chunks
-SOCK_BUF = 4 * 1024 * 1024       # 4 MB OS socket buffers
-WRITE_HIGH_WATER = 512 * 1024    # drain only when > 512 KB pending
+RELAY_BUF = 1024 * 1024
+SOCK_BUF = 4 * 1024 * 1024
 
-QUOTA_MIN_BATCH = 32 * 1024
-QUOTA_MAX_BATCH = 2 * 1024 * 1024
-QUOTA_START_BATCH = 128 * 1024
-QUOTA_CHECK_INTERVAL = 0.25
+FLOW_MIN_HW = 256 * 1024
+FLOW_MAX_HW = 32 * 1024 * 1024
+FLOW_START_HW = 4 * 1024 * 1024
+FLOW_FAST_DRAIN_MS = 2.0
+FLOW_SLOW_DRAIN_MS = 25.0
+
+QUOTA_MIN_BATCH = 64 * 1024
+QUOTA_MAX_BATCH = 4 * 1024 * 1024
+QUOTA_START_BATCH = 256 * 1024
+QUOTA_CHECK_INTERVAL = 0.5
 
 
 def tune_socket(writer: asyncio.StreamWriter):
@@ -38,11 +44,26 @@ def tune_socket(writer: asyncio.StreamWriter):
         pass
 
 
+class AdaptiveFlow:
+    __slots__ = ("high_water",)
+
+    def __init__(self):
+        self.high_water = FLOW_START_HW
+
+    def should_drain(self, buf_size: int) -> bool:
+        return buf_size > self.high_water
+
+    async def drain(self, writer: asyncio.StreamWriter):
+        t0 = time.monotonic()
+        await writer.drain()
+        ms = (time.monotonic() - t0) * 1000
+        if ms < FLOW_FAST_DRAIN_MS:
+            self.high_water = min(FLOW_MAX_HW, int(self.high_water * 1.5) + 65536)
+        elif ms > FLOW_SLOW_DRAIN_MS:
+            self.high_water = max(FLOW_MIN_HW, self.high_water // 2)
+
+
 class QuotaGate:
-    """
-    Batch usage accounting so we don't take a global lock on every WS frame.
-    Flushes every ~128KB–2MB or every 0.25s (adaptive).
-    """
     __slots__ = ("uuid", "pending", "last_check", "ok", "batch_bytes", "rate_ewma", "on_usage")
 
     def __init__(self, uuid: str, on_usage):
@@ -64,12 +85,15 @@ class QuotaGate:
             flush, self.pending = self.pending, 0
             if elapsed > 0:
                 inst = flush / elapsed
-                self.rate_ewma = inst if self.rate_ewma == 0 else (0.7 * self.rate_ewma + 0.3 * inst)
+                self.rate_ewma = inst if not self.rate_ewma else (0.7 * self.rate_ewma + 0.3 * inst)
                 target = int(self.rate_ewma * QUOTA_CHECK_INTERVAL)
                 self.batch_bytes = max(QUOTA_MIN_BATCH, min(QUOTA_MAX_BATCH, target or QUOTA_MIN_BATCH))
             self.last_check = now
             try:
-                self.ok = await self.on_usage(self.uuid, flush)
+                res = self.on_usage(self.uuid, flush)
+                if hasattr(res, "__await__"):
+                    res = await res
+                self.ok = bool(res)
             except Exception:
                 self.ok = False
             return self.ok
@@ -79,7 +103,10 @@ class QuotaGate:
         if self.pending:
             flush, self.pending = self.pending, 0
             try:
-                self.ok = self.ok and await self.on_usage(self.uuid, flush)
+                res = self.on_usage(self.uuid, flush)
+                if hasattr(res, "__await__"):
+                    res = await res
+                self.ok = self.ok and bool(res)
             except Exception:
                 self.ok = False
         return self.ok
@@ -88,8 +115,7 @@ class QuotaGate:
 def parse_vless_header(chunk: bytes):
     if len(chunk) < 24:
         raise ValueError("chunk too small")
-    pos = 1
-    pos += 16
+    pos = 1 + 16
     addon_len = chunk[pos]
     pos += 1 + addon_len
     command = chunk[pos]
@@ -115,7 +141,7 @@ def parse_vless_header(chunk: bytes):
     return command, address, port, chunk[pos:]
 
 
-async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: QuotaGate):
+async def relay_ws_to_tcp(ws, writer, gate, flow):
     try:
         while True:
             msg = await ws.receive()
@@ -126,13 +152,13 @@ async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: Quo
                 continue
             if not await gate.add(len(data)):
                 try:
-                    await ws.close(code=1008, reason="quota")
+                    await ws.close(code=1008)
                 except Exception:
                     pass
                 break
             writer.write(data)
-            if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
-                await writer.drain()
+            if flow.should_drain(writer.transport.get_write_buffer_size()):
+                await flow.drain(writer)
     except (WebSocketDisconnect, Exception):
         pass
     finally:
@@ -143,12 +169,7 @@ async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: Quo
             pass
 
 
-async def relay_tcp_to_ws(
-    ws: WebSocket,
-    reader: asyncio.StreamReader,
-    gate: QuotaGate,
-    vless_prefix: bool = True,
-):
+async def relay_tcp_to_ws(ws, reader, gate, vless_prefix=True):
     first = True
     try:
         while True:
@@ -157,30 +178,22 @@ async def relay_tcp_to_ws(
                 break
             if not await gate.add(len(data)):
                 try:
-                    await ws.close(code=1008, reason="quota")
+                    await ws.close(code=1008)
                 except Exception:
                     pass
                 break
             if vless_prefix and first:
-                payload = b"\x00\x00" + data
+                await ws.send_bytes(b"\x00\x00" + data)
                 first = False
             else:
-                payload = data
-            await ws.send_bytes(payload)
+                await ws.send_bytes(data)
     except Exception:
         pass
     finally:
         await gate.flush()
 
 
-async def handle_vless_ws(
-    ws: WebSocket,
-    uuid: str,
-    is_allowed,
-    on_usage,
-    register_conn,
-    unregister_conn,
-):
+async def handle_vless_ws(ws, uuid, is_allowed, on_usage, register_conn, unregister_conn):
     await ws.accept()
     link = is_allowed(uuid)
     if not link:
@@ -199,10 +212,8 @@ async def handle_vless_ws(
 
         command, address, port, payload = parse_vless_header(first_chunk)
 
-        async def _account(uid: str, n: int) -> bool:
-            return await on_usage(uid, n)
-
-        gate = QuotaGate(uuid, _account)
+        gate = QuotaGate(uuid, on_usage)
+        flow = AdaptiveFlow()
         await gate.add(len(first_chunk))
 
         if command != 0x01:
@@ -211,18 +222,18 @@ async def handle_vless_ws(
 
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(address, port),
-            timeout=12.0,
+            timeout=10.0,
         )
         tune_socket(writer)
 
         if payload:
             writer.write(payload)
-            await writer.drain()
+            await flow.drain(writer)
             await gate.add(len(payload))
 
         done, pending = await asyncio.wait(
             {
-                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate)),
+                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate, flow)),
                 asyncio.create_task(relay_tcp_to_ws(ws, reader, gate, True)),
             },
             return_when=asyncio.FIRST_COMPLETED,
@@ -233,9 +244,7 @@ async def handle_vless_ws(
                 await t
             except asyncio.CancelledError:
                 pass
-    except WebSocketDisconnect:
-        pass
-    except asyncio.TimeoutError:
+    except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     except Exception as e:
         logger.debug("vless: %s", e)

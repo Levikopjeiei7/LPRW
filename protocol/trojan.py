@@ -1,7 +1,4 @@
-"""
-LPRW Trojan — high-throughput relay (batched quota).
-Path auth: /trojan-ws/{password}
-"""
+"""LPRW Trojan high-throughput relay."""
 from __future__ import annotations
 
 import asyncio
@@ -10,12 +7,7 @@ import socket
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from protocol.vless import (
-    RELAY_BUF,
-    WRITE_HIGH_WATER,
-    QuotaGate,
-    tune_socket,
-)
+from protocol.vless import AdaptiveFlow, QuotaGate, RELAY_BUF, tune_socket
 
 logger = logging.getLogger("LPRW.trojan")
 
@@ -50,7 +42,7 @@ def parse_trojan_header(data: bytes):
     return password, cmd, address, port, rest[pos:]
 
 
-async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: QuotaGate):
+async def relay_ws_to_tcp(ws, writer, gate, flow):
     try:
         while True:
             msg = await ws.receive()
@@ -61,13 +53,13 @@ async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: Quo
                 continue
             if not await gate.add(len(data)):
                 try:
-                    await ws.close(code=1008, reason="quota")
+                    await ws.close(code=1008)
                 except Exception:
                     pass
                 break
             writer.write(data)
-            if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
-                await writer.drain()
+            if flow.should_drain(writer.transport.get_write_buffer_size()):
+                await flow.drain(writer)
     except (WebSocketDisconnect, Exception):
         pass
     finally:
@@ -78,7 +70,7 @@ async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: Quo
             pass
 
 
-async def relay_tcp_to_ws(ws: WebSocket, reader: asyncio.StreamReader, gate: QuotaGate):
+async def relay_tcp_to_ws(ws, reader, gate):
     try:
         while True:
             data = await reader.read(RELAY_BUF)
@@ -86,7 +78,7 @@ async def relay_tcp_to_ws(ws: WebSocket, reader: asyncio.StreamReader, gate: Quo
                 break
             if not await gate.add(len(data)):
                 try:
-                    await ws.close(code=1008, reason="quota")
+                    await ws.close(code=1008)
                 except Exception:
                     pass
                 break
@@ -97,14 +89,7 @@ async def relay_tcp_to_ws(ws: WebSocket, reader: asyncio.StreamReader, gate: Quo
         await gate.flush()
 
 
-async def handle_trojan_ws(
-    ws: WebSocket,
-    password: str,
-    is_allowed,
-    on_usage,
-    register_conn,
-    unregister_conn,
-):
+async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, unregister_conn):
     await ws.accept()
     link = is_allowed(password)
     if not link:
@@ -123,10 +108,8 @@ async def handle_trojan_ws(
 
         _, cmd, address, port, payload = parse_trojan_header(first_chunk)
 
-        async def _account(uid: str, n: int) -> bool:
-            return await on_usage(uid, n)
-
-        gate = QuotaGate(password, _account)
+        gate = QuotaGate(password, on_usage)
+        flow = AdaptiveFlow()
         await gate.add(len(first_chunk))
 
         if cmd != 0x01:
@@ -135,18 +118,18 @@ async def handle_trojan_ws(
 
         reader, writer = await asyncio.wait_for(
             asyncio.open_connection(address, port),
-            timeout=12.0,
+            timeout=10.0,
         )
         tune_socket(writer)
 
         if payload:
             writer.write(payload)
-            await writer.drain()
+            await flow.drain(writer)
             await gate.add(len(payload))
 
         done, pending = await asyncio.wait(
             {
-                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate)),
+                asyncio.create_task(relay_ws_to_tcp(ws, writer, gate, flow)),
                 asyncio.create_task(relay_tcp_to_ws(ws, reader, gate)),
             },
             return_when=asyncio.FIRST_COMPLETED,
@@ -157,9 +140,7 @@ async def handle_trojan_ws(
                 await t
             except asyncio.CancelledError:
                 pass
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
+    except (WebSocketDisconnect, Exception) as e:
         logger.debug("trojan: %s", e)
     finally:
         if writer:
