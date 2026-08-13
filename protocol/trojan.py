@@ -1,4 +1,4 @@
-"""VLESS over WebSocket — header parse + TCP relay."""
+"""Trojan over WebSocket — auth + SOCKS-like request + TCP relay."""
 from __future__ import annotations
 
 import asyncio
@@ -8,61 +8,47 @@ import struct
 import uuid
 from typing import Awaitable, Callable, Optional
 
-logger = logging.getLogger("LPRW.vless")
-
-CMD_TCP = 0x01
-CMD_UDP = 0x02
-ATYP_IP4 = 0x01
-ATYP_DOM = 0x02
-ATYP_IP6 = 0x03
-
-
-def _uuid_str(b: bytes) -> str:
-    try:
-        return str(uuid.UUID(bytes=b))
-    except Exception:
-        return b.hex()
+logger = logging.getLogger("LPRW.trojan")
 
 
 def parse_header(data: bytes) -> Optional[dict]:
+    """password\\r\\n + CMD ATYP ADDR PORT + payload"""
     try:
-        if len(data) < 19:
+        if b"\r\n" not in data:
             return None
-        if data[0] != 0:
+        pw_b, rest = data.split(b"\r\n", 1)
+        password = pw_b.decode("utf-8", "ignore").strip()
+        if rest.startswith(b"\r\n"):
+            rest = rest[2:]
+        if len(rest) < 7:
             return None
-        uid = _uuid_str(data[1:17])
-        m = data[17]
-        pos = 18 + m
-        if len(data) < pos + 4:
-            return None
-        cmd = data[pos]
-        pos += 1
-        port = struct.unpack("!H", data[pos : pos + 2])[0]
-        pos += 2
-        atyp = data[pos]
-        pos += 1
-        if atyp == ATYP_IP4:
-            if len(data) < pos + 4:
-                return None
-            addr = socket.inet_ntop(socket.AF_INET, data[pos : pos + 4])
+        cmd = rest[0]
+        atyp = rest[1]
+        pos = 2
+        if atyp == 0x01:
+            addr = socket.inet_ntop(socket.AF_INET, rest[pos : pos + 4])
             pos += 4
-        elif atyp == ATYP_DOM:
-            n = data[pos]
+        elif atyp == 0x03:
+            n = rest[pos]
             pos += 1
-            if len(data) < pos + n:
-                return None
-            addr = data[pos : pos + n].decode("utf-8", "ignore")
+            addr = rest[pos : pos + n].decode("utf-8", "ignore")
             pos += n
-        elif atyp == ATYP_IP6:
-            if len(data) < pos + 16:
-                return None
-            addr = socket.inet_ntop(socket.AF_INET6, data[pos : pos + 16])
+        elif atyp == 0x04:
+            addr = socket.inet_ntop(socket.AF_INET6, rest[pos : pos + 16])
             pos += 16
         else:
             return None
-        return {"uuid": uid, "cmd": cmd, "port": port, "addr": addr, "payload": data[pos:]}
+        port = struct.unpack("!H", rest[pos : pos + 2])[0]
+        pos += 2
+        return {
+            "password": password,
+            "cmd": cmd,
+            "port": port,
+            "addr": addr,
+            "payload": rest[pos:],
+        }
     except Exception as e:
-        logger.debug("parse: %s", e)
+        logger.debug("trojan parse: %s", e)
         return None
 
 
@@ -74,17 +60,13 @@ async def _open(addr: str, port: int, timeout: float = 12.0):
         return None, None
 
 
-async def handle_vless_ws(
+async def handle_trojan_ws(
     websocket,
     find_link: Callable[[str], Optional[dict]],
     on_usage: Callable[[str, int], Awaitable[None]],
     register_online: Callable[[str, str], None],
     unregister_online: Callable[[str, str], None],
 ):
-    """
-    find_link(uuid) -> link dict or None
-    on_usage(link_id, nbytes)
-    """
     conn_id = uuid.uuid4().hex[:12]
     link_id = None
     try:
@@ -93,18 +75,13 @@ async def handle_vless_ws(
         if not hdr:
             await websocket.close(code=1008)
             return
-        link = find_link(hdr["uuid"])
+        link = find_link(hdr["password"])
         if not link:
             await websocket.close(code=1008)
             return
         link_id = link["id"]
-        max_c = link.get("max_conn") or 0
-        # caller enforces max_conn via register if needed
         register_online(link_id, conn_id)
-        # VLESS response: ver=0, addon_len=0
-        await websocket.send_bytes(b"\x00\x00")
-        if hdr["cmd"] != CMD_TCP:
-            # UDP not implemented in this build
+        if hdr["cmd"] != 0x01:
             return
         reader, writer = await _open(hdr["addr"], hdr["port"])
         if reader is None:
@@ -147,13 +124,8 @@ async def handle_vless_ws(
                     pass
 
         await asyncio.gather(pump_tcp_to_ws(), pump_ws_to_tcp())
-    except asyncio.TimeoutError:
-        try:
-            await websocket.close()
-        except Exception:
-            pass
     except Exception as e:
-        logger.debug("vless handler: %s", e)
+        logger.debug("trojan handler: %s", e)
     finally:
         if link_id:
             unregister_online(link_id, conn_id)
