@@ -1,131 +1,156 @@
-"""Trojan over WebSocket — auth + SOCKS-like request + TCP relay."""
+"""
+LPRW Trojan core — original implementation.
+Path-based auth: /trojan-ws/{password}
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
 import socket
-import struct
-import uuid
-from typing import Awaitable, Callable, Optional
+from typing import Optional
+
+from fastapi import WebSocket, WebSocketDisconnect
+
+from protocol.vless import RELAY_BUF, WRITE_HIGH_WATER, tune_socket
 
 logger = logging.getLogger("LPRW.trojan")
 
 
-def parse_header(data: bytes) -> Optional[dict]:
+def parse_trojan_header(data: bytes):
     """password\\r\\n + CMD ATYP ADDR PORT + payload"""
-    try:
-        if b"\r\n" not in data:
-            return None
-        pw_b, rest = data.split(b"\r\n", 1)
-        password = pw_b.decode("utf-8", "ignore").strip()
-        if rest.startswith(b"\r\n"):
-            rest = rest[2:]
-        if len(rest) < 7:
-            return None
-        cmd = rest[0]
-        atyp = rest[1]
-        pos = 2
-        if atyp == 0x01:
-            addr = socket.inet_ntop(socket.AF_INET, rest[pos : pos + 4])
-            pos += 4
-        elif atyp == 0x03:
-            n = rest[pos]
-            pos += 1
-            addr = rest[pos : pos + n].decode("utf-8", "ignore")
-            pos += n
-        elif atyp == 0x04:
-            addr = socket.inet_ntop(socket.AF_INET6, rest[pos : pos + 16])
-            pos += 16
-        else:
-            return None
-        port = struct.unpack("!H", rest[pos : pos + 2])[0]
-        pos += 2
-        return {
-            "password": password,
-            "cmd": cmd,
-            "port": port,
-            "addr": addr,
-            "payload": rest[pos:],
-        }
-    except Exception as e:
-        logger.debug("trojan parse: %s", e)
-        return None
+    if b"\r\n" not in data:
+        raise ValueError("no crlf")
+    pw_b, rest = data.split(b"\r\n", 1)
+    password = pw_b.decode("utf-8", "ignore").strip()
+    if rest.startswith(b"\r\n"):
+        rest = rest[2:]
+    if len(rest) < 7:
+        raise ValueError("short request")
+    cmd = rest[0]
+    atyp = rest[1]
+    pos = 2
+    if atyp == 0x01:
+        address = socket.inet_ntop(socket.AF_INET, rest[pos : pos + 4])
+        pos += 4
+    elif atyp == 0x03:
+        n = rest[pos]
+        pos += 1
+        address = rest[pos : pos + n].decode("utf-8", "ignore")
+        pos += n
+    elif atyp == 0x04:
+        address = socket.inet_ntop(socket.AF_INET6, rest[pos : pos + 16])
+        pos += 16
+    else:
+        raise ValueError(f"bad atyp {atyp}")
+    port = int.from_bytes(rest[pos : pos + 2], "big")
+    pos += 2
+    return password, cmd, address, port, rest[pos:]
 
 
-async def _open(addr: str, port: int, timeout: float = 12.0):
+async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, on_bytes):
     try:
-        return await asyncio.wait_for(asyncio.open_connection(addr, port), timeout=timeout)
-    except Exception as e:
-        logger.debug("connect %s:%s %s", addr, port, e)
-        return None, None
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            data = msg.get("bytes") or (msg.get("text") or "").encode()
+            if not data:
+                continue
+            if on_bytes:
+                await on_bytes(len(data))
+            writer.write(data)
+            if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
+                await writer.drain()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        try:
+            writer.write_eof()
+        except Exception:
+            pass
+
+
+async def relay_tcp_to_ws(ws: WebSocket, reader: asyncio.StreamReader, on_bytes):
+    try:
+        while True:
+            data = await reader.read(RELAY_BUF)
+            if not data:
+                break
+            if on_bytes:
+                await on_bytes(len(data))
+            await ws.send_bytes(data)
+    except Exception:
+        pass
 
 
 async def handle_trojan_ws(
-    websocket,
-    find_link: Callable[[str], Optional[dict]],
-    on_usage: Callable[[str, int], Awaitable[None]],
-    register_online: Callable[[str, str], None],
-    unregister_online: Callable[[str, str], None],
+    ws: WebSocket,
+    password: str,
+    is_allowed,
+    on_usage,
+    register_conn,
+    unregister_conn,
 ):
-    conn_id = uuid.uuid4().hex[:12]
-    link_id = None
+    await ws.accept()
+    link = is_allowed(password)
+    if not link:
+        await ws.close(code=1008, reason="not authorized")
+        return
+
+    conn_id = register_conn(password)
+    writer = None
     try:
-        first = await asyncio.wait_for(websocket.receive_bytes(), timeout=20)
-        hdr = parse_header(first)
-        if not hdr:
-            await websocket.close(code=1008)
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
+        if first_msg["type"] == "websocket.disconnect":
             return
-        link = find_link(hdr["password"])
-        if not link:
-            await websocket.close(code=1008)
-            return
-        link_id = link["id"]
-        register_online(link_id, conn_id)
-        if hdr["cmd"] != 0x01:
-            return
-        reader, writer = await _open(hdr["addr"], hdr["port"])
-        if reader is None:
+        first_chunk = first_msg.get("bytes") or (first_msg.get("text") or "").encode()
+        if not first_chunk:
             return
 
-        async def pump_tcp_to_ws():
+        # password may also be in header; path is authoritative
+        _, cmd, address, port, payload = parse_trojan_header(first_chunk)
+        await on_usage(password, len(first_chunk))
+
+        if cmd != 0x01:
+            await ws.close(code=1008, reason="udp not supported")
+            return
+
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(address, port),
+            timeout=12.0,
+        )
+        tune_socket(writer)
+
+        if payload:
+            writer.write(payload)
+            await writer.drain()
+            await on_usage(password, len(payload))
+
+        async def _usage(n: int):
+            await on_usage(password, n)
+
+        done, pending = await asyncio.wait(
+            {
+                asyncio.create_task(relay_ws_to_tcp(ws, writer, _usage)),
+                asyncio.create_task(relay_tcp_to_ws(ws, reader, _usage)),
+            },
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
             try:
-                payload = hdr.get("payload") or b""
-                if payload:
-                    await websocket.send_bytes(payload)
-                    await on_usage(link_id, len(payload))
-                while True:
-                    chunk = await reader.read(32 * 1024)
-                    if not chunk:
-                        break
-                    await websocket.send_bytes(chunk)
-                    await on_usage(link_id, len(chunk))
-            except Exception:
+                await t
+            except asyncio.CancelledError:
                 pass
-            finally:
-                try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-
-        async def pump_ws_to_tcp():
-            try:
-                while True:
-                    chunk = await websocket.receive_bytes()
-                    writer.write(chunk)
-                    await writer.drain()
-                    await on_usage(link_id, len(chunk))
-            except Exception:
-                pass
-            finally:
-                try:
-                    writer.close()
-                except Exception:
-                    pass
-
-        await asyncio.gather(pump_tcp_to_ws(), pump_ws_to_tcp())
+    except WebSocketDisconnect:
+        pass
     except Exception as e:
-        logger.debug("trojan handler: %s", e)
+        logger.debug("trojan error: %s", e)
     finally:
-        if link_id:
-            unregister_online(link_id, conn_id)
+        if writer:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+        unregister_conn(conn_id)

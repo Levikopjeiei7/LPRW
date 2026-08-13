@@ -1,159 +1,193 @@
-"""VLESS over WebSocket — header parse + TCP relay."""
+"""
+LPRW VLESS core — original implementation.
+Path-based auth: /ws/{uuid}
+"""
 from __future__ import annotations
 
 import asyncio
 import logging
 import socket
-import struct
-import uuid
-from typing import Awaitable, Callable, Optional
+import time
+from typing import Optional
+
+from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("LPRW.vless")
 
-CMD_TCP = 0x01
-CMD_UDP = 0x02
-ATYP_IP4 = 0x01
-ATYP_DOM = 0x02
-ATYP_IP6 = 0x03
+RELAY_BUF = 1024 * 1024
+SOCK_BUF = 4 * 1024 * 1024
+WRITE_HIGH_WATER = 512 * 1024
 
 
-def _uuid_str(b: bytes) -> str:
+def tune_socket(writer: asyncio.StreamWriter):
     try:
-        return str(uuid.UUID(bytes=b))
+        sock = writer.transport.get_extra_info("socket")
+        if sock is None:
+            return
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCK_BUF)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCK_BUF)
+        if hasattr(socket, "TCP_QUICKACK"):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+    except Exception as e:
+        logger.debug("tune_socket: %s", e)
+
+
+def parse_vless_header(chunk: bytes):
+    """Parse VLESS request. Returns (command, address, port, payload)."""
+    if len(chunk) < 24:
+        raise ValueError("chunk too small")
+    pos = 1  # skip version
+    pos += 16  # skip UUID (auth via URL path)
+    addon_len = chunk[pos]
+    pos += 1 + addon_len
+    command = chunk[pos]
+    pos += 1
+    port = int.from_bytes(chunk[pos : pos + 2], "big")
+    pos += 2
+    addr_type = chunk[pos]
+    pos += 1
+    if addr_type == 1:
+        address = ".".join(str(b) for b in chunk[pos : pos + 4])
+        pos += 4
+    elif addr_type == 2:
+        dlen = chunk[pos]
+        pos += 1
+        address = chunk[pos : pos + dlen].decode("utf-8", errors="ignore")
+        pos += dlen
+    elif addr_type == 3:
+        ab = chunk[pos : pos + 16]
+        pos += 16
+        address = ":".join(f"{ab[i]:02x}{ab[i+1]:02x}" for i in range(0, 16, 2))
+    else:
+        raise ValueError(f"unknown addr type: {addr_type}")
+    return command, address, port, chunk[pos:]
+
+
+async def relay_ws_to_tcp(
+    ws: WebSocket,
+    writer: asyncio.StreamWriter,
+    on_bytes,
+):
+    try:
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            data = msg.get("bytes") or (msg.get("text") or "").encode()
+            if not data:
+                continue
+            if on_bytes:
+                await on_bytes(len(data))
+            writer.write(data)
+            if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
+                await writer.drain()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
+        try:
+            writer.write_eof()
+        except Exception:
+            pass
+
+
+async def relay_tcp_to_ws(
+    ws: WebSocket,
+    reader: asyncio.StreamReader,
+    on_bytes,
+    vless_prefix: bool = True,
+):
+    first = True
+    try:
+        while True:
+            data = await reader.read(RELAY_BUF)
+            if not data:
+                break
+            if on_bytes:
+                await on_bytes(len(data))
+            if vless_prefix and first:
+                payload = b"\x00\x00" + data
+                first = False
+            else:
+                payload = data
+            await ws.send_bytes(payload)
     except Exception:
-        return b.hex()
-
-
-def parse_header(data: bytes) -> Optional[dict]:
-    try:
-        if len(data) < 19:
-            return None
-        if data[0] != 0:
-            return None
-        uid = _uuid_str(data[1:17])
-        m = data[17]
-        pos = 18 + m
-        if len(data) < pos + 4:
-            return None
-        cmd = data[pos]
-        pos += 1
-        port = struct.unpack("!H", data[pos : pos + 2])[0]
-        pos += 2
-        atyp = data[pos]
-        pos += 1
-        if atyp == ATYP_IP4:
-            if len(data) < pos + 4:
-                return None
-            addr = socket.inet_ntop(socket.AF_INET, data[pos : pos + 4])
-            pos += 4
-        elif atyp == ATYP_DOM:
-            n = data[pos]
-            pos += 1
-            if len(data) < pos + n:
-                return None
-            addr = data[pos : pos + n].decode("utf-8", "ignore")
-            pos += n
-        elif atyp == ATYP_IP6:
-            if len(data) < pos + 16:
-                return None
-            addr = socket.inet_ntop(socket.AF_INET6, data[pos : pos + 16])
-            pos += 16
-        else:
-            return None
-        return {"uuid": uid, "cmd": cmd, "port": port, "addr": addr, "payload": data[pos:]}
-    except Exception as e:
-        logger.debug("parse: %s", e)
-        return None
-
-
-async def _open(addr: str, port: int, timeout: float = 12.0):
-    try:
-        return await asyncio.wait_for(asyncio.open_connection(addr, port), timeout=timeout)
-    except Exception as e:
-        logger.debug("connect %s:%s %s", addr, port, e)
-        return None, None
+        pass
 
 
 async def handle_vless_ws(
-    websocket,
-    find_link: Callable[[str], Optional[dict]],
-    on_usage: Callable[[str, int], Awaitable[None]],
-    register_online: Callable[[str, str], None],
-    unregister_online: Callable[[str, str], None],
+    ws: WebSocket,
+    uuid: str,
+    is_allowed,
+    on_usage,
+    register_conn,
+    unregister_conn,
 ):
     """
-    find_link(uuid) -> link dict or None
-    on_usage(link_id, nbytes)
+    is_allowed(uuid) -> link dict or None
+    on_usage(uuid, nbytes) -> awaitable
     """
-    conn_id = uuid.uuid4().hex[:12]
-    link_id = None
+    await ws.accept()
+    link = is_allowed(uuid)
+    if not link:
+        await ws.close(code=1008, reason="not authorized")
+        return
+
+    conn_id = register_conn(uuid)
+    writer = None
     try:
-        first = await asyncio.wait_for(websocket.receive_bytes(), timeout=20)
-        hdr = parse_header(first)
-        if not hdr:
-            await websocket.close(code=1008)
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
+        if first_msg["type"] == "websocket.disconnect":
             return
-        link = find_link(hdr["uuid"])
-        if not link:
-            await websocket.close(code=1008)
-            return
-        link_id = link["id"]
-        max_c = link.get("max_conn") or 0
-        # caller enforces max_conn via register if needed
-        register_online(link_id, conn_id)
-        # VLESS response: ver=0, addon_len=0
-        await websocket.send_bytes(b"\x00\x00")
-        if hdr["cmd"] != CMD_TCP:
-            # UDP not implemented in this build
-            return
-        reader, writer = await _open(hdr["addr"], hdr["port"])
-        if reader is None:
+        first_chunk = first_msg.get("bytes") or (first_msg.get("text") or "").encode()
+        if not first_chunk:
             return
 
-        async def pump_tcp_to_ws():
+        command, address, port, payload = parse_vless_header(first_chunk)
+        await on_usage(uuid, len(first_chunk))
+
+        if command != 0x01:  # TCP only
+            await ws.close(code=1008, reason="udp not supported")
+            return
+
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(address, port),
+            timeout=12.0,
+        )
+        tune_socket(writer)
+
+        if payload:
+            writer.write(payload)
+            await writer.drain()
+            await on_usage(uuid, len(payload))
+
+        async def _usage(n: int):
+            await on_usage(uuid, n)
+
+        done, pending = await asyncio.wait(
+            {
+                asyncio.create_task(relay_ws_to_tcp(ws, writer, _usage)),
+                asyncio.create_task(relay_tcp_to_ws(ws, reader, _usage, True)),
+            },
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
             try:
-                payload = hdr.get("payload") or b""
-                if payload:
-                    await websocket.send_bytes(payload)
-                    await on_usage(link_id, len(payload))
-                while True:
-                    chunk = await reader.read(32 * 1024)
-                    if not chunk:
-                        break
-                    await websocket.send_bytes(chunk)
-                    await on_usage(link_id, len(chunk))
-            except Exception:
+                await t
+            except asyncio.CancelledError:
                 pass
-            finally:
-                try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-
-        async def pump_ws_to_tcp():
-            try:
-                while True:
-                    chunk = await websocket.receive_bytes()
-                    writer.write(chunk)
-                    await writer.drain()
-                    await on_usage(link_id, len(chunk))
-            except Exception:
-                pass
-            finally:
-                try:
-                    writer.close()
-                except Exception:
-                    pass
-
-        await asyncio.gather(pump_tcp_to_ws(), pump_ws_to_tcp())
+    except WebSocketDisconnect:
+        pass
     except asyncio.TimeoutError:
-        try:
-            await websocket.close()
-        except Exception:
-            pass
+        logger.debug("vless timeout uuid=%s", uuid[:8])
     except Exception as e:
-        logger.debug("vless handler: %s", e)
+        logger.debug("vless error: %s", e)
     finally:
-        if link_id:
-            unregister_online(link_id, conn_id)
+        if writer:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+        unregister_conn(conn_id)
