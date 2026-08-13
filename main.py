@@ -221,19 +221,34 @@ def find_link(uid: str) -> Optional[dict]:
             return lk
     return None
 
-async def on_usage(uid: str, n: int):
+async def on_usage(uid: str, n: int) -> bool:
+    """Account traffic. Returns False if quota exceeded / disabled.
+    Designed for batched calls (QuotaGate) — not every frame.
+    """
+    # lock-free global counters (single-threaded asyncio)
     STATS["bytes"] += n
     STATS["reqs"] += 1
-    HOURLY[now().strftime("%H:00")] += n
+    hour_key = time.strftime("%H:00", time.localtime())
+    HOURLY[hour_key] += n
+
     async with LLOCK:
-        if uid in LINKS:
-            LINKS[uid]["used"] = LINKS[uid].get("used", 0) + n
-        else:
+        link = LINKS.get(uid)
+        if link is None:
             compact = uid.replace("-", "").lower()
-            for lid in LINKS:
+            for lid, lk in LINKS.items():
                 if lid.replace("-", "").lower() == compact:
-                    LINKS[lid]["used"] = LINKS[lid].get("used", 0) + n
+                    link = lk
+                    uid = lid
                     break
+        if link is None:
+            return False
+        if not allowed(link):
+            return False
+        link["used"] = link.get("used", 0) + n
+        # re-check after increment
+        if link.get("vol", 0) > 0 and link["used"] >= link["vol"]:
+            return False
+    return True
 
 def reg_conn(uid: str) -> str:
     cid = secrets.token_urlsafe(6)
@@ -552,7 +567,7 @@ async def ws_vless(ws: WebSocket, uid: str):
     def is_ok(u):
         return find_link(u)
     await handle_vless_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    await schedule_save()
+    asyncio.create_task(schedule_save())
 
 @app.websocket("/trojan-ws/{uid}")
 async def ws_trojan(ws: WebSocket, uid: str):
@@ -567,7 +582,7 @@ async def ws_trojan(ws: WebSocket, uid: str):
         lk = find_link(u)
         return lk if lk and lk.get("proto") == "trojan" else None
     await handle_trojan_ws(ws, uid, is_ok2, on_usage, reg_conn, unreg_conn)
-    await schedule_save()
+    asyncio.create_task(schedule_save())
 
 from pages import DASHBOARD  # noqa: E402
 
