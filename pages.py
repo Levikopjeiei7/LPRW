@@ -35,7 +35,22 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 .login-foot{margin-top:22px;text-align:center;font-size:.75rem;color:var(--mu2)}
 #app{display:none;min-height:100vh;position:relative;z-index:1}
 .shell{display:grid;grid-template-columns:var(--side) 1fr;min-height:100vh}
-@media(max-width:960px){.shell{grid-template-columns:1fr}.side{position:fixed;inset:0 auto 0 0;width:min(86vw,var(--side));transform:translateX(110%);z-index:50;transition:.25s}.side.open{transform:none}.side-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}.side-backdrop.show{display:block}.burger{display:inline-flex!important}}
+
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--s2);border-top:1px solid var(--bd);padding:8px 6px calc(8px + env(safe-area-inset-bottom));justify-content:space-around;gap:4px;backdrop-filter:blur(14px);box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+.bottom-nav button{flex:1;border:none;background:transparent;color:var(--mu);font-family:inherit;font-size:.68rem;font-weight:700;padding:8px 4px;border-radius:12px;cursor:pointer}
+.bottom-nav button.active{color:var(--pr3);background:rgba(99,102,241,.14)}
+.bottom-nav button span{display:block;font-size:1.05rem;margin-bottom:2px}
+
+@media(max-width:960px){
+.shell{grid-template-columns:1fr}
+.side{display:none!important}
+.side-backdrop{display:none!important}
+.burger{display:none!important}
+.main{padding:14px 14px 96px!important}
+.topbar h1{font-size:1.15rem}
+.kpis{grid-template-columns:repeat(2,1fr)!important}
+.bottom-nav{display:flex!important}
+}
 .side{background:linear-gradient(180deg,var(--s2),var(--s1));border-left:1px solid var(--bd);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
 .side .logo{display:flex;align-items:center;gap:12px;padding:8px 10px 20px;border-bottom:1px solid var(--bd);margin-bottom:12px}
 .side .logo .mk{width:42px;height:42px;border-radius:12px;background:var(--g1);display:grid;place-items:center;font-weight:900;color:#fff}
@@ -708,6 +723,49 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 .op-79{opacity:0.39}
 .shadow-lv-79{box-shadow:0 11px 55px rgba(0,0,0,0.54)}
 
+
+/* ===== MOBILE FIX ===== */
+@media (max-width: 960px) {
+  .shell { grid-template-columns: 1fr !important; }
+  .side {
+    position: fixed !important;
+    top: 0; bottom: 0; right: 0; left: auto !important;
+    width: min(86vw, 280px) !important;
+    transform: translateX(110%) !important;
+    z-index: 60 !important;
+    box-shadow: -12px 0 40px rgba(0,0,0,.45);
+  }
+  .side.open { transform: translateX(0) !important; }
+  .side-backdrop { z-index: 55 !important; }
+  .main { padding: 14px 12px 88px !important; width: 100% !important; max-width: 100% !important; }
+  .topbar { position: sticky; top: 0; z-index: 20; background: var(--bg); padding: 8px 0 12px; }
+  .kpis { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+  .grid-2 { grid-template-columns: 1fr !important; }
+  table { font-size: .78rem; }
+  th, td { padding: 10px 6px; }
+  .modal { padding: 18px; border-radius: 18px; }
+  .login-card { padding: 32px 22px; border-radius: 22px; }
+  /* bottom navigation */
+  .mob-nav {
+    display: flex !important;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    z-index: 50;
+    background: var(--s2);
+    border-top: 1px solid var(--bd);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    justify-content: space-around;
+    backdrop-filter: blur(14px);
+  }
+  .mob-nav button {
+    flex: 1; background: transparent; border: none; color: var(--mu);
+    font-family: inherit; font-size: .68rem; font-weight: 700;
+    padding: 8px 2px; border-radius: 12px; cursor: pointer;
+  }
+  .mob-nav button.active { color: var(--pr3); background: rgba(99,102,241,.12); }
+}
+@media (min-width: 961px) {
+  .mob-nav { display: none !important; }
+}
 </style></head><body>
 <div id="login"><div class="login-card"><div class="brand-mark">LP</div><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · ورود مدیر</p>
 <div class="field"><label>نام کاربری</label><input id="user" autocomplete="username" placeholder="admin"></div>
@@ -781,6 +839,22 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <div class="field"><label>روز</label><input id="ns-d" type="number" value="0"></div></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-sub')">لغو</button><button class="btn btn-p" id="btn-cs">ساخت</button></div>
 </div></div>
+
+<div class="mob-nav" id="mob-nav">
+  <button type="button" data-tab="dash" class="active">خانه</button>
+  <button type="button" data-tab="links">لینک</button>
+  <button type="button" data-tab="subs">ساب</button>
+  <button type="button" data-tab="online">آنلاین</button>
+  <button type="button" data-tab="settings">تنظیمات</button>
+</div>
+
+<div class="bottom-nav" id="bottom-nav">
+<button type="button" data-tab="dash" class="active"><span>🏠</span>خانه</button>
+<button type="button" data-tab="links"><span>🔗</span>لینک</button>
+<button type="button" data-tab="subs"><span>📡</span>ساب</button>
+<button type="button" data-tab="online"><span>🟢</span>آنلاین</button>
+<button type="button" data-tab="settings"><span>⚙️</span>تنظیمات</button>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];let chart;
@@ -794,7 +868,18 @@ function copy(t){navigator.clipboard.writeText(t).then(()=>toast('کپی شد'))
 function setTheme(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem('lprw_theme',t)}
 setTheme(localStorage.getItem('lprw_theme')||'dark');
 $('#btn-theme').onclick=()=>{const cur=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';setTheme(cur);toast(cur==='dark'?'حالت شب':'حالت روز')};
-$$('.nav-item').forEach(n=>n.onclick=()=>{$$('.nav-item').forEach(x=>x.classList.remove('active'));n.classList.add('active');const tab=n.dataset.tab;['dash','links','subs','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});const titles={dash:'داشبورد',links:'لینک‌ها',subs:'سابسکریپشن',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};$('#page-title').textContent=titles[tab]||'';if(tab==='links')loadLinks();if(tab==='subs')loadSubs();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();$('#side').classList.remove('open');$('#backdrop').classList.remove('show')});
+function goTab(tab){
+  $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
+  $$('#bottom-nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
+  ['dash','links','subs','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});
+  const titles={dash:'داشبورد',links:'لینک‌ها',subs:'سابسکریپشن',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};
+  $('#page-title').textContent=titles[tab]||'';
+  if(tab==='links')loadLinks();if(tab==='subs')loadSubs();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();
+  $('#side')?.classList.remove('open');$('#backdrop')?.classList.remove('show');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+$$('.nav-item').forEach(n=>n.onclick=()=>goTab(n.dataset.tab));
+$$('#bottom-nav button').forEach(n=>n.onclick=()=>goTab(n.dataset.tab));
 $('#burger').onclick=()=>{$('#side').classList.add('open');$('#backdrop').classList.add('show')};
 $('#backdrop').onclick=()=>{$('#side').classList.remove('open');$('#backdrop').classList.remove('show')};
 $('#btn-login').onclick=async()=>{try{await api('/api/login',{method:'POST',body:{username:$('#user').value.trim()||'admin',password:$('#pw').value}});showApp()}catch{$('#lerr').style.display='block'}};
@@ -814,6 +899,16 @@ $('#btn-cl').onclick=async()=>{try{const r=await api('/api/links',{method:'POST'
 $('#btn-cs').onclick=async()=>{try{const ids=$('#ns-i').value.split(',').map(x=>x.trim()).filter(Boolean);const r=await api('/api/subs',{method:'POST',body:{name:$('#ns-n').value.trim()||'Sub',volume_gb:+$('#ns-v').value||0,days:+$('#ns-d').value||0,link_ids:ids}});closeM('m-sub');toast('ساب ساخته شد');copy(r.url);loadSubs()}catch(e){toast(e.message)}};
 async function loadAll(){await loadDash();try{await api('/api/me')}catch{showLogin();return}}
 (async()=>{try{await api('/api/me');showApp()}catch{showLogin()}})();
+
+// mobile bottom nav
+$$('#mob-nav button').forEach(b=>b.onclick=()=>{
+  const tab=b.dataset.tab;
+  const nav=$$('.nav-item').find(n=>n.dataset.tab===tab);
+  if(nav) nav.click();
+  $$('#mob-nav button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+});
+
 setInterval(()=>{if($('#app').style.display==='block')loadDash()},15000);
 </script></body></html>
 '''

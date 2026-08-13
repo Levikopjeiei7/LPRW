@@ -61,9 +61,68 @@ ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PW = os.environ.get("ADMIN_PASSWORD", "12345")
 PORT = int(os.environ.get("PORT", 8000))
 
-def host() -> str:
-    h = os.environ.get("RAILWAY_PUBLIC_DOMAIN") or os.environ.get("HOST") or "localhost"
-    return h.replace("https://", "").replace("http://", "").split("/")[0].strip()
+def host(request: Optional[Request] = None) -> str:
+    """Resolve public panel host. Prefer env / learned host / request headers. Never stick on localhost."""
+    candidates = []
+    for key in ("RAILWAY_PUBLIC_DOMAIN", "RAILWAY_STATIC_URL", "PUBLIC_HOST", "HOST", "DOMAIN"):
+        v = (os.environ.get(key) or "").strip()
+        if v:
+            candidates.append(v)
+    ph = (SETTINGS.get("public_host") or "").strip()
+    if ph:
+        candidates.append(ph)
+    if request is not None:
+        for hk in ("x-forwarded-host", "x-original-host", "host"):
+            raw = (request.headers.get(hk) or "").split(",")[0].strip()
+            if raw:
+                candidates.append(raw)
+        try:
+            if request.url.hostname:
+                candidates.append(request.url.hostname)
+        except Exception:
+            pass
+    cleaned = []
+    for h in candidates:
+        h = (h or "").replace("https://", "").replace("http://", "").split("/")[0].strip()
+        if not h:
+            continue
+        if ":" in h and not h.startswith("["):
+            host_part, _, port = h.rpartition(":")
+            if port.isdigit() and port in ("80", "443"):
+                h = host_part
+        if h and h not in cleaned:
+            cleaned.append(h)
+    for h in cleaned:
+        if h not in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            return h
+    return cleaned[0] if cleaned else "localhost"
+
+
+def status_line(link: dict, h: str) -> str:
+    """Display-only config: remaining volume + days in the remark (fragment)."""
+    used = int(link.get("used", 0) or 0)
+    vol = int(link.get("vol", 0) or 0)
+    if vol <= 0:
+        left_h = "نامحدود"
+    else:
+        left_h = bh(max(0, vol - used))
+    days = "نامحدود"
+    exp = link.get("exp")
+    if exp:
+        try:
+            delta = datetime.fromisoformat(exp) - now()
+            days = f"{max(0, delta.days)} روز"
+        except Exception:
+            days = str(exp)[:10]
+    used_h = bh(used)
+    vol_h = "نامحدود" if vol <= 0 else bh(vol)
+    label = link.get("label") or "LPRW"
+    remark = quote(f"📊 {label} | باقیمانده {left_h} از {vol_h} | {days}")
+    # Non-routable display entry (clients show name; connection is not used)
+    return (
+        f"vless://00000000-0000-0000-0000-000000000001@127.0.0.1:80"
+        f"?encryption=none&security=none&type=tcp&headerType=none#{remark}"
+    )
 
 def now() -> datetime:
     return datetime.now(TZ)
@@ -301,6 +360,30 @@ class PasswordIn(BaseModel):
 app = FastAPI(title="LPRW", docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+@app.middleware("http")
+async def capture_host(request: Request, call_next):
+    # Always learn public host from real inbound requests (Railway / reverse proxy)
+    try:
+        xf = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
+        hdr = (request.headers.get("host") or "").split(",")[0].strip()
+        for raw in (xf, hdr):
+            if not raw:
+                continue
+            h = raw.replace("https://", "").replace("http://", "").split("/")[0].strip()
+            if ":" in h and not h.startswith("["):
+                host_part, _, port = h.rpartition(":")
+                if port in ("80", "443"):
+                    h = host_part
+            if h and h not in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+                os.environ["PUBLIC_HOST"] = h
+                SETTINGS["public_host"] = h
+                break
+    except Exception:
+        pass
+    return await call_next(request)
+
+
+
 @app.on_event("startup")
 async def startup():
     await load()
@@ -343,14 +426,16 @@ async def me(_: bool = Depends(auth)):
     return {"ok": True, "version": VERSION, "name": SETTINGS.get("panel_name", "LPRW")}
 
 @app.get("/api/stats")
-async def stats(_: bool = Depends(auth)):
+async def stats(request: Request, _: bool = Depends(auth)):
+    h = host(request)
     return {
         "bytes": STATS["bytes"], "bytes_h": bh(STATS["bytes"]), "reqs": STATS["reqs"],
         "online": len(CONNECTIONS),
         "links": len(LINKS), "active_links": sum(1 for l in LINKS.values() if allowed(l)),
         "subs": len(SUBS), "uptime": int(time.time()-STATS["start"]),
         "uptime_h": (lambda s: f"{s//3600:02d}:{(s%3600)//60:02d}:{s%60:02d}")(int(time.time()-STATS["start"])),
-        "hourly": dict(sorted(HOURLY.items())[-24:]), "host": host(),
+        "hourly": dict(sorted(HOURLY.items())[-24:]), "host": h,
+        "public_host": h,
         "version": VERSION, "announce": SETTINGS.get("announce", ""),
         "connections": [
             {"id": k, "uuid": v.get("uuid", "")[:8], "sec": int(time.time()-v.get("at", time.time()))}
@@ -363,15 +448,15 @@ async def activity(_: bool = Depends(auth)):
     return list(ACT)[::-1][:150]
 
 @app.get("/api/links")
-async def list_links(_: bool = Depends(auth)):
-    h = host()
+async def list_links(request: Request, _: bool = Depends(auth)):
+    h = host(request)
     async with LLOCK:
         rows = [enrich(l, h) for l in LINKS.values()]
     rows.sort(key=lambda x: x.get("created", ""), reverse=True)
     return rows
 
 @app.post("/api/links")
-async def create_link(body: LinkIn, _: bool = Depends(auth)):
+async def create_link(body: LinkIn, request: Request, _: bool = Depends(auth)):
     lid = str(uuidlib.uuid4())
     vol = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
     exp = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
@@ -384,7 +469,7 @@ async def create_link(body: LinkIn, _: bool = Depends(auth)):
         LINKS[lid] = link
     await schedule_save()
     act(f"link created: {body.label}", "ok")
-    return {"ok": True, "link": enrich(link, host())}
+    return {"ok": True, "link": enrich(link, host(request))}
 
 @app.patch("/api/links/{lid}")
 async def patch_link(lid: str, body: LinkPatch, _: bool = Depends(auth)):
@@ -414,8 +499,8 @@ async def del_link(lid: str, _: bool = Depends(auth)):
     return {"ok": True}
 
 @app.get("/api/subs")
-async def list_subs(_: bool = Depends(auth)):
-    h = host()
+async def list_subs(request: Request, _: bool = Depends(auth)):
+    h = host(request)
     async with SLOCK:
         out = []
         for s in SUBS.values():
@@ -428,7 +513,7 @@ async def list_subs(_: bool = Depends(auth)):
     return out
 
 @app.post("/api/subs")
-async def create_sub(body: SubIn, _: bool = Depends(auth)):
+async def create_sub(body: SubIn, request: Request, _: bool = Depends(auth)):
     sid = secrets.token_urlsafe(14)
     vol = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
     exp = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
@@ -437,7 +522,7 @@ async def create_sub(body: SubIn, _: bool = Depends(auth)):
         SUBS[sid] = sub
     await schedule_save()
     act(f"sub created: {body.name}", "ok")
-    return {"ok": True, "sub": sub, "url": f"https://{host()}/sub-group/{sid}"}
+    return {"ok": True, "sub": sub, "url": f"https://{host(request)}/sub-group/{sid}"}
 
 @app.delete("/api/subs/{sid}")
 async def del_sub(sid: str, _: bool = Depends(auth)):
@@ -474,26 +559,37 @@ async def backup(_: bool = Depends(auth)):
 
 # Public sub single (base64 like many clients expect)
 @app.get("/sub/{lid}")
-async def pub_sub_one(lid: str):
+async def pub_sub_one(lid: str, request: Request):
     async with LLOCK:
         lk = LINKS.get(lid)
         if not lk or not allowed(lk):
             raise HTTPException(404)
-        text = share(lk, host())
-    content = base64.b64encode(text.encode()).decode()
-    used = lk.get("used", 0)
-    total = lk.get("vol", 0)
+        h = host(request)
+        lines = [status_line(lk, h), share(lk, h)]
+        used = lk.get("used", 0)
+        total = lk.get("vol", 0)
+        exp = lk.get("exp")
+        label = lk.get("label") or "LPRW"
+    expire_ts = 0
+    if exp:
+        try:
+            expire_ts = int(datetime.fromisoformat(exp).timestamp())
+        except Exception:
+            expire_ts = 0
+    content = base64.b64encode("\n".join(lines).encode()).decode()
+    title_b64 = base64.b64encode(label.encode()).decode()
     return Response(
         content=content,
-        media_type="text/plain",
+        media_type="text/plain; charset=utf-8",
         headers={
             "profile-update-interval": "6",
-            "subscription-userinfo": f"upload=0; download={used}; total={total}; expire=0",
+            "profile-title": f"base64:{title_b64}",
+            "subscription-userinfo": f"upload=0; download={used}; total={total}; expire={expire_ts}",
         },
     )
 
 @app.get("/sub-group/{sid}")
-async def pub_sub_group(sid: str):
+async def pub_sub_group(sid: str, request: Request):
     async with SLOCK:
         sub = SUBS.get(sid)
         if not sub:
@@ -506,32 +602,48 @@ async def pub_sub_group(sid: str):
                 raise
             except Exception:
                 pass
-        h = host()
+        h = host(request)
         lines = []
+        total_used = 0
+        total_vol = 0
         async with LLOCK:
             ids = sub.get("link_ids") or list(LINKS.keys())
             for i in ids:
                 lk = LINKS.get(i)
                 if lk and allowed(lk):
+                    lines.append(status_line(lk, h))
                     lines.append(share(lk, h))
-    raw = "\n".join(lines)
-    content = base64.b64encode(raw.encode()).decode()
+                    total_used += int(lk.get("used", 0) or 0)
+                    total_vol += int(lk.get("vol", 0) or 0)
+        if not lines:
+            fake = {"label": sub.get("name") or "LPRW", "used": sub.get("used", 0), "vol": sub.get("vol", 0), "exp": sub.get("exp")}
+            lines = [status_line(fake, h)]
+    content = base64.b64encode("\n".join(lines).encode()).decode()
+    expire_ts = 0
+    if sub.get("exp"):
+        try:
+            expire_ts = int(datetime.fromisoformat(sub["exp"]).timestamp())
+        except Exception:
+            expire_ts = 0
+    title_b64 = base64.b64encode((sub.get("name") or "LPRW").encode()).decode()
     return Response(
         content=content,
-        media_type="text/plain",
+        media_type="text/plain; charset=utf-8",
         headers={
             "profile-update-interval": "6",
-            "subscription-userinfo": f"upload=0; download={sub.get('used',0)}; total={sub.get('vol',0)}; expire=0",
+            "profile-title": f"base64:{title_b64}",
+            "subscription-userinfo": f"upload=0; download={total_used}; total={total_vol}; expire={expire_ts}",
         },
     )
 
+
 @app.get("/qr/{lid}")
-async def qr(lid: str):
+async def qr(lid: str, request: Request):
     async with LLOCK:
         lk = LINKS.get(lid)
         if not lk:
             raise HTTPException(404)
-        text = share(lk, host())
+        text = share(lk, host(request))
     img = qrcode.make(text)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -539,12 +651,12 @@ async def qr(lid: str):
     return StreamingResponse(buf, media_type="image/png")
 
 @app.get("/u/{lid}")
-async def user_page(lid: str):
+async def user_page(lid: str, request: Request):
     async with LLOCK:
         lk = LINKS.get(lid)
         if not lk:
             raise HTTPException(404)
-        d = enrich(lk, host())
+        d = enrich(lk, host(request))
     from pages import USER_PORTAL
     exp = (d.get("exp") or "—")
     if exp and exp != "—":
@@ -564,7 +676,7 @@ async def user_page(lid: str):
         .replace("{{SUB}}", d["sub_url"])
         .replace("{{QR}}", d["qr_url"])
         .replace("{{REMARK}}", d.get("remark") or "")
-        .replace("{{HOST}}", host())
+        .replace("{{HOST}}", d.get("share", "").split("@")[-1].split(":")[0] if "@" in d.get("share", "") else host(request))
         .replace("{{VERSION}}", VERSION)
     )
     return HTMLResponse(html)
