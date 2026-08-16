@@ -29,11 +29,12 @@ from pydantic import BaseModel, Field
 
 from protocol.vless import handle_vless_ws
 from protocol.trojan import handle_trojan_ws
+from protocol.shadowsocks import handle_ss_ws, DEFAULT_METHOD as SS_DEFAULT_METHOD
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "3.0.0"
+VERSION = "3.2.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -241,7 +242,7 @@ async def auth(req: Request):
     return True
 
 def share(link: dict, h: Optional[str] = None) -> str:
-    """Share link — params encoded like production gateways (alpn=h2)."""
+    """Client share URI for vless / trojan / shadowsocks."""
     h = h or host()
     lab = quote(link.get("label") or "LPRW")
     uid = link["id"]
@@ -256,6 +257,19 @@ def share(link: dict, h: Optional[str] = None) -> str:
             }.items()
         )
         return f"trojan://{uid}@{h}:443?{q}#{lab}"
+    if proto == "ss":
+        method = link.get("ss_method") or SS_DEFAULT_METHOD
+        # SIP002-style userinfo
+        userinfo = base64.urlsafe_b64encode(f"{method}:{uid}".encode()).decode().rstrip("=")
+        path = f"/ss-ws/{uid}"
+        q = "&".join(
+            f"{k}={quote(str(v), safe='')}"
+            for k, v in {
+                "type": "ws", "path": path, "host": h,
+                "security": "tls", "sni": h, "fp": "chrome", "alpn": "h2",
+            }.items()
+        )
+        return f"ss://{userinfo}@{h}:443?{q}#{lab}"
     path = f"/ws/{uid}"
     q = "&".join(
         f"{k}={quote(str(v), safe='')}"
@@ -327,7 +341,7 @@ class LoginIn(BaseModel):
 
 class LinkIn(BaseModel):
     label: str = Field(..., min_length=1, max_length=80)
-    proto: str = Field(default="vless", pattern="^(vless|trojan)$")
+    proto: str = Field(default="vless", pattern="^(vless|trojan|ss)$")
     volume_gb: float = Field(default=0, ge=0)
     days: int = Field(default=0, ge=0)
     max_conn: int = Field(default=0, ge=0)
@@ -464,6 +478,7 @@ async def create_link(body: LinkIn, request: Request, _: bool = Depends(auth)):
         "id": lid, "label": body.label, "proto": body.proto, "vol": vol, "used": 0,
         "exp": exp, "max_conn": body.max_conn, "active": True, "remark": body.remark,
         "created": now().isoformat(),
+        "ss_method": SS_DEFAULT_METHOD if body.proto == "ss" else None,
     }
     async with LLOCK:
         LINKS[lid] = link
@@ -693,15 +708,16 @@ async def ws_vless(ws: WebSocket, uid: str):
 async def ws_trojan(ws: WebSocket, uid: str):
     def is_ok(u):
         lk = find_link(u)
-        if lk and lk.get("proto") == "trojan":
-            return lk
-        # allow if link exists as trojan even when path password matches id
-        return lk if lk and lk.get("proto", "vless") == "trojan" else (find_link(u) if find_link(u) and find_link(u).get("proto") == "trojan" else None)
-    # simpler:
-    def is_ok2(u):
-        lk = find_link(u)
         return lk if lk and lk.get("proto") == "trojan" else None
-    await handle_trojan_ws(ws, uid, is_ok2, on_usage, reg_conn, unreg_conn)
+    await handle_trojan_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
+    asyncio.create_task(schedule_save())
+
+@app.websocket("/ss-ws/{uid}")
+async def ws_ss(ws: WebSocket, uid: str):
+    def is_ok(u):
+        lk = find_link(u)
+        return lk if lk and lk.get("proto") == "ss" else None
+    await handle_ss_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
     asyncio.create_task(schedule_save())
 
 from pages import DASHBOARD, USER_PORTAL  # noqa: E402

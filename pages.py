@@ -10,17 +10,18 @@ DASHBOARD = r'''<!DOCTYPE html>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-:root{--bg:#05070d;--bg2:#0a0d16;--s1:rgba(16,19,32,.82);--s2:rgba(22,26,42,.94);--s3:rgba(28,33,52,.98);--bd:rgba(255,255,255,.06);--bd2:rgba(255,255,255,.11);--bd3:rgba(99,102,241,.35);--tx:#f1f3f9;--mu:#8b93a8;--mu2:#5c657a;--pr:#6366f1;--pr2:#818cf8;--pr3:#a5b4fc;--ok:#34d399;--er:#f87171;--wn:#fbbf24;--cy:#22d3ee;--pk:#e879f9;--g1:linear-gradient(135deg,#6366f1 0%,#8b5cf6 45%,#d946ef 100%);--shadow:0 28px 70px rgba(0,0,0,.55);--r:20px;--side:272px}
+:root{--bg:#03050c;--bg2:#070b16;--s1:rgba(12,16,28,.88);--s2:rgba(18,22,38,.96);--s3:rgba(24,30,48,.99);--bd:rgba(255,255,255,.07);--bd2:rgba(255,255,255,.13);--bd3:rgba(124,58,237,.45);--tx:#eef2ff;--mu:#9aa3b8;--mu2:#667085;--pr:#7c3aed;--pr2:#a78bfa;--pr3:#c4b5fd;--ok:#34d399;--er:#fb7185;--wn:#fbbf24;--cy:#22d3ee;--pk:#e879f9;--g1:linear-gradient(135deg,#4f46e5 0%,#7c3aed 40%,#db2777 100%);--g2:linear-gradient(120deg,rgba(79,70,229,.2),rgba(219,39,119,.12));--shadow:0 30px 80px rgba(0,0,0,.65);--r:22px;--side:280px}
 [data-theme="light"]{--bg:#f4f6fb;--bg2:#e8ecf6;--s1:rgba(255,255,255,.92);--s2:#fff;--s3:#f8fafc;--bd:rgba(15,23,42,.08);--bd2:rgba(15,23,42,.12);--tx:#0f172a;--mu:#64748b;--mu2:#94a3b8;--shadow:0 20px 50px rgba(15,23,42,.12)}
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:Vazirmatn,system-ui,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;line-height:1.65;overflow-x:hidden}
 body::before,body::after{content:"";position:fixed;pointer-events:none;z-index:0;border-radius:50%;filter:blur(100px)}
-body::before{width:560px;height:560px;top:-120px;right:-80px;background:radial-gradient(circle,rgba(99,102,241,.32),transparent 68%)}
-body::after{width:480px;height:480px;bottom:-100px;left:-60px;background:radial-gradient(circle,rgba(217,70,239,.16),transparent 70%)}
+body::before{width:640px;height:640px;top:-160px;right:-100px;background:radial-gradient(circle,rgba(124,58,237,.38),transparent 68%)}
+body::after{width:520px;height:520px;bottom:-120px;left:-80px;background:radial-gradient(circle,rgba(219,39,119,.2),transparent 70%)}
+.mesh{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at center,black 20%,transparent 75%);opacity:.5}
 button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{display:none!important}
 ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:rgba(129,140,248,.35);border-radius:99px}
 @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;z-index:2}
-.login-card{width:100%;max-width:460px;background:linear-gradient(165deg,var(--s2),var(--s1));border:1px solid var(--bd2);border-radius:28px;padding:48px 40px;box-shadow:var(--shadow);position:relative;overflow:hidden;animation:rise .55s ease}
+.login-card{width:100%;max-width:460px;background:linear-gradient(165deg,rgba(24,30,52,.98),rgba(10,12,22,.99));border:1px solid var(--bd2);border-radius:32px;padding:48px 40px;box-shadow:var(--shadow),0 0 0 1px rgba(124,58,237,.08),inset 0 1px 0 rgba(255,255,255,.06);position:relative;overflow:hidden;animation:rise .55s ease;backdrop-filter:blur(20px)}
 .login-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--g1)}
 .brand-mark{width:64px;height:64px;border-radius:18px;object-fit:cover;display:block;margin-bottom:22px;box-shadow:0 16px 40px rgba(99,102,241,.45);border:2px solid rgba(255,255,255,.12)}
 .login-card h1{font-size:1.85rem;font-weight:800}.login-card .sub{color:var(--mu);margin:8px 0 28px;font-size:.92rem}
@@ -29,7 +30,7 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 [data-theme="light"] .field input,[data-theme="light"] .field select{background:#f8fafc}
 .field input:focus{border-color:var(--pr);box-shadow:0 0 0 4px rgba(99,102,241,.2)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border-radius:14px;border:1px solid var(--bd2);cursor:pointer;font-weight:700;background:var(--s3);color:var(--tx)}
-.btn-p{background:var(--g1);color:#fff;border:none;box-shadow:0 12px 30px rgba(99,102,241,.35)}.btn-block{width:100%;padding:15px}
+.btn-p{background:var(--g1);color:#fff;border:none;box-shadow:0 14px 36px rgba(124,58,237,.4);letter-spacing:.02em}.btn-p:hover{filter:brightness(1.1);box-shadow:0 18px 44px rgba(124,58,237,.5)}.btn-block{width:100%;padding:15px}
 .btn-sm{padding:8px 12px;font-size:.8rem;border-radius:10px}.btn-d{background:rgba(248,113,113,.12);color:var(--er);border-color:rgba(248,113,113,.25)}
 .err{display:none;margin-top:12px;padding:10px 14px;border-radius:12px;background:rgba(248,113,113,.12);color:var(--er);font-size:.85rem}
 .login-foot{margin-top:22px;text-align:center;font-size:.75rem;color:var(--mu2)}
@@ -51,12 +52,12 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 .kpis{grid-template-columns:repeat(2,1fr)!important}
 .bottom-nav{display:flex!important}
 }
-.side{background:linear-gradient(180deg,var(--s2),var(--s1));border-left:1px solid var(--bd);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
+.side{background:linear-gradient(180deg,rgba(14,18,32,.98),rgba(8,10,18,.99));border-left:1px solid var(--bd);padding:22px 14px;display:flex;flex-direction:column;gap:6px;box-shadow:-12px 0 40px rgba(0,0,0,.35)}
 .side .logo{display:flex;align-items:center;gap:12px;padding:8px 10px 20px;border-bottom:1px solid var(--bd);margin-bottom:12px}
 .side .logo .mk{width:42px;height:42px;border-radius:12px;object-fit:cover;display:block;border:1px solid rgba(255,255,255,.1)}
 .side .logo h2{font-size:1.05rem;font-weight:800}.side .logo small{color:var(--mu);font-size:.72rem}
 .nav-item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;color:var(--mu);cursor:pointer;font-weight:600;font-size:.9rem;border:1px solid transparent}
-.nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}.nav-item.active{background:rgba(99,102,241,.15);color:var(--pr3);border-color:rgba(99,102,241,.25)}
+.nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}.nav-item.active{background:linear-gradient(90deg,rgba(124,58,237,.22),rgba(219,39,119,.1));color:#e9d5ff;border-color:rgba(167,139,250,.35);box-shadow:inset 3px 0 0 #a78bfa}
 .side-bottom{margin-top:auto;padding-top:16px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:8px}
 .main{padding:22px 26px 40px;max-width:1400px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px;flex-wrap:wrap}
@@ -64,9 +65,9 @@ button,input,select{font-family:inherit;font-size:.9rem;color:var(--tx)}.hidden{
 .burger{display:none;background:var(--s2);border:1px solid var(--bd2);border-radius:12px;padding:10px 12px;cursor:pointer}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
 @media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpis{grid-template-columns:1fr}}
-.kpi{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:18px;position:relative;overflow:hidden;animation:rise .5s ease}
+.kpi{background:linear-gradient(145deg,rgba(24,30,48,.95),rgba(12,16,28,.9));border:1px solid var(--bd);border-radius:var(--r);padding:20px 18px;position:relative;overflow:hidden;animation:rise .5s ease;box-shadow:0 12px 40px rgba(0,0,0,.25)}.kpi:hover{border-color:var(--bd3);transform:translateY(-2px);transition:.25s}
 .kpi .t{font-size:.78rem;color:var(--mu);font-weight:600;margin-bottom:8px}.kpi .v{font-size:1.55rem;font-weight:800}.kpi .s{font-size:.75rem;color:var(--mu2);margin-top:6px}
-.panel{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:20px;margin-bottom:18px}
+.panel{background:linear-gradient(160deg,rgba(20,24,40,.94),rgba(12,16,28,.92));border:1px solid var(--bd);border-radius:var(--r);padding:22px;margin-bottom:18px;box-shadow:0 16px 48px rgba(0,0,0,.28)}
 .panel-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}.panel-h h3{font-size:1.05rem;font-weight:800}
 .grid-2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}@media(max-width:960px){.grid-2{grid-template-columns:1fr}}
 table{width:100%;border-collapse:collapse}th,td{padding:12px 10px;text-align:right;border-bottom:1px solid var(--bd);font-size:.86rem}th{color:var(--mu);font-weight:700;font-size:.75rem}
@@ -767,7 +768,7 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
   .mob-nav { display: none !important; }
 }
 </style></head><body>
-<div id="login"><div class="login-card"><img class="brand-mark" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="64" height="64"><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · ورود مدیر</p>
+<div class="mesh"></div><div id="login"><div class="login-card"><img class="brand-mark" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="64" height="64"><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · کنترل چندپروتکلی</p>
 <div class="field"><label>نام کاربری</label><input id="user" autocomplete="username" placeholder="admin"></div>
 <div class="field"><label>رمز عبور</label><input id="pw" type="password" autocomplete="current-password" placeholder="••••••"></div>
 <button class="btn btn-p btn-block" id="btn-login">ورود به پنل</button>
@@ -800,7 +801,7 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <div class="panel"><div class="panel-h"><h3>وضعیت سیستم</h3></div>
 <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">آپ‌تایم</span><strong id="k-up">—</strong></div>
 <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">هاست</span><strong id="k-host">—</strong></div>
-<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">نسخه</span><strong>3.1 LPRW</strong></div>
+<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">نسخه</span><strong>3.2 LPRW</strong></div>
 <div style="display:flex;justify-content:space-between;padding:10px 0"><span style="color:var(--mu)">درخواست‌ها</span><strong id="k-req">—</strong></div>
 </div></div>
 </section>
@@ -822,7 +823,7 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 </main></div></div>
 <div class="modal-bg" id="m-link"><div class="modal"><h3>لینک جدید</h3>
 <div class="field"><label>نام</label><input id="nl-n" placeholder="کاربر ۱"></div>
-<div class="form-row"><div class="field"><label>پروتکل</label><select id="nl-p"><option value="vless">VLESS</option><option value="trojan">Trojan</option></select></div>
+<div class="form-row"><div class="field"><label>پروتکل</label><select id="nl-p"><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select></div>
 <div class="field"><label>حجم (GB) ۰=نامحدود</label><input id="nl-v" type="number" value="0" min="0" step="0.1"></div></div>
 <div class="form-row"><div class="field"><label>روز ۰=نامحدود</label><input id="nl-d" type="number" value="0" min="0"></div>
 <div class="field"><label>سقف اتصال همزمان</label><input id="nl-c" type="number" value="0" min="0"></div></div>
