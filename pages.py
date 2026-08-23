@@ -103,7 +103,7 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 <body>
 <div id="login">
   <div class="login-card">
-    <div style="width:52px;height:52px;border-radius:14px;background:var(--g);display:flex;align-items:center;justify-content:center;font-weight:900;color:#fff;margin-bottom:16px">LP</div>
+    <img src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="56" height="56" style="border-radius:14px;margin-bottom:16px;display:block;border:2px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(99,102,241,.4)">
     <h1>ورود به پنل</h1>
     <p class="sub">LPRW · مدیریت پروکسی</p>
     <div class="field"><label>نام کاربری</label><input id="lu" value="admin" autocomplete="username"></div>
@@ -116,7 +116,7 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 <div id="app">
 <div class="shell">
   <aside class="side">
-    <div class="logo"><div class="mk">LP</div><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
+    <div class="logo"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="38" height="38" style="object-fit:cover;border-radius:11px;border:1px solid rgba(255,255,255,.1)"><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
     <div class="nav-item active" data-page="home" onclick="go('home')">🏠 داشبورد</div>
     <div class="nav-item" data-page="links" onclick="go('links')">🔗 لینک‌ها</div>
     <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">📡 پروتکل و اینباند</div>
@@ -197,7 +197,8 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 </div>
 
 <div class="modal-bg" id="m-link"><div class="modal">
-  <h3>لینک جدید</h3>
+  <h3 id="ml-title">لینک جدید</h3>
+  <input type="hidden" id="ml-id" value="">
   <div class="field"><label>نام</label><input id="ml-label"></div>
   <div class="field"><label>اینباند</label><select id="ml-ib"></select></div>
   <div class="form-row">
@@ -207,7 +208,7 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
   <div class="field"><label>یادداشت</label><input id="ml-remark"></div>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
     <button class="btn" onclick="closeModals()">انصراف</button>
-    <button class="btn btn-p" onclick="createLink()">ایجاد</button>
+    <button class="btn btn-p" id="ml-save" onclick="saveLink()">ذخیره</button>
   </div>
 </div></div>
 
@@ -334,6 +335,7 @@ async function loadInbounds(){
 
 async function loadLinks(){
   links=await api('/api/links');
+  window._links=links;
   const body=$('#links-body');
   const empty=$('#links-empty');
   if(!links.length){body.innerHTML='';empty.classList.remove('hidden');return}
@@ -344,6 +346,7 @@ async function loadLinks(){
     <td>${l.used_h} / ${l.vol_h}</td>
     <td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span> ${l.online?`🟢${l.online}`:''}</td>
     <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editLink('${l.id}')">ویرایش</button>
       <button class="btn btn-sm" onclick="copyText(\`${l.share.replace(/`/g,'')}\`)">کپی</button>
       <button class="btn btn-sm" onclick="copyText('${l.sub_url}')">ساب</button>
       <button class="btn btn-sm btn-d" onclick="delLink('${l.id}')">حذف</button>
@@ -373,7 +376,29 @@ async function loadSettings(){
   $('#s-support').value=s.support_url||'';
 }
 
-function openLinkModal(){loadInbounds();$('#m-link').classList.add('show')}
+function openLinkModal(){
+  $('#ml-id').value='';
+  $('#ml-title').textContent='لینک جدید';
+  $('#ml-label').value='';
+  $('#ml-vol').value='0';
+  $('#ml-days').value='0';
+  $('#ml-remark').value='';
+  loadInbounds();
+  $('#m-link').classList.add('show');
+}
+async function editLink(id){
+  const l=(window._links||[]).find(x=>x.id===id);
+  if(!l){toast('لینک پیدا نشد');return}
+  await loadInbounds();
+  $('#ml-id').value=id;
+  $('#ml-title').textContent='ویرایش لینک';
+  $('#ml-label').value=l.label||'';
+  $('#ml-ib').value=l.inbound_id||'';
+  $('#ml-vol').value=l.vol? (l.vol/1024/1024/1024).toFixed(2):0;
+  $('#ml-days').value=0;
+  $('#ml-remark').value=l.remark||'';
+  $('#m-link').classList.add('show');
+}
 function openIbModal(){$('#m-ib').classList.add('show')}
 async function openSubModal(){
   $('#ms-id').value='';
@@ -414,13 +439,21 @@ async function saveSub(){
   closeModals();loadSubs();
 }
 
-async function createLink(){
-  await api('/api/links',{method:'POST',body:JSON.stringify({
+async function saveLink(){
+  const id=$('#ml-id').value;
+  const body={
     label:$('#ml-label').value,inbound_id:$('#ml-ib').value,
     volume_gb:parseFloat($('#ml-vol').value)||0,days:parseInt($('#ml-days').value)||0,
     remark:$('#ml-remark').value
-  })});
-  closeModals();toast('لینک ساخته شد');loadLinks();
+  };
+  if(id){
+    await api('/api/links/'+id,{method:'PATCH',body:JSON.stringify(body)});
+    toast('لینک ویرایش شد');
+  }else{
+    await api('/api/links',{method:'POST',body:JSON.stringify(body)});
+    toast('لینک ساخته شد');
+  }
+  closeModals();loadLinks();
 }
 async function createIb(){
   await api('/api/inbounds',{method:'POST',body:JSON.stringify({

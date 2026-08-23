@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.2.0"
+VERSION = "4.3.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -298,13 +298,13 @@ def get_inbound(link: dict) -> dict:
 
 
 def tunnel_path(ib: dict, uid: str) -> str:
-    """Canonical tunnel path that always maps to a real WebSocket handler."""
+    """Canonical tunnel path — same shape as working /ws/{uid}."""
     proto = ib.get("proto", "vless")
     network = ib.get("network", "ws")
     if network == "xhttp":
-        return f"/xhttp/{proto}/{uid}"
+        return f"/xhttp/{uid}"
     if network == "httpupgrade":
-        return f"/hu/{proto}/{uid}"
+        return f"/hu/{uid}"
     if proto == "trojan":
         return f"/trojan-ws/{uid}"
     if proto == "ss":
@@ -323,7 +323,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
     security = ib.get("security", "tls") or "none"
     path = tunnel_path(ib, uid)
     fp = "chrome"
-    alpn = "h2,http/1.1"
+    alpn = "http/1.1"
     sni = h
 
     if proto == "ss":
@@ -343,7 +343,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
     # Always ws framing — Railway/uvicorn only terminate real WebSocket.
     # Paths /ws /hu /xhttp still separate inbounds; ?ed=2560 = early data.
     ctype = "ws"
-    path_for_client = path + "?ed=2560"
+    path_for_client = path
 
     if proto == "trojan":
         params = {
@@ -643,9 +643,9 @@ async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
         if body.network == "ws":
             path = f"/{body.proto}-ws"
         elif body.network == "xhttp":
-            path = f"/xhttp/{body.proto}"
+            path = "/xhttp"
         else:
-            path = f"/hu/{body.proto}"
+            path = "/hu"
     if not path.startswith("/"):
         path = "/" + path
     ib = {
@@ -1085,9 +1085,16 @@ async def ws_ss(ws: WebSocket, uid: str):
 
 
 # Dynamic paths for custom inbounds: /{path}/{uid}
-async def _dispatch_tunnel(ws: WebSocket, proto: str, uid: str):
-    """Route connection to the right protocol handler."""
-    proto = (proto or "vless").lower()
+def _proto_of(uid: str) -> str:
+    lk = find_link(uid) or LINKS.get(uid)
+    if not lk:
+        return "vless"
+    return get_inbound(lk).get("proto") or lk.get("proto") or "vless"
+
+
+async def _dispatch_tunnel(ws: WebSocket, uid: str):
+    """Route by link inbound protocol."""
+    proto = (_proto_of(uid) or "vless").lower()
     if proto == "trojan":
         def is_ok(u):
             lk = find_link(u)
@@ -1103,24 +1110,22 @@ async def _dispatch_tunnel(ws: WebSocket, proto: str, uid: str):
     asyncio.create_task(schedule_save())
 
 
-# HTTPUpgrade = WebSocket upgrade under a dedicated path (Xray-compatible)
+# Identical shape to working /ws/{uid}
+@app.websocket("/hu/{uid}")
+@app.websocket("/httpupgrade/{uid}")
+async def ws_httpupgrade(ws: WebSocket, uid: str):
+    await _dispatch_tunnel(ws, uid)
+
+
+@app.websocket("/xhttp/{uid}")
+async def ws_xhttp(ws: WebSocket, uid: str):
+    await _dispatch_tunnel(ws, uid)
+
+# legacy multi-segment paths still accepted
 @app.websocket("/hu/{proto}/{uid}")
-@app.websocket("/httpupgrade/{proto}/{uid}")
-async def ws_httpupgrade(ws: WebSocket, proto: str, uid: str):
-    await _dispatch_tunnel(ws, proto, uid)
-
-
-# XHTTP path — accepted as WebSocket on Railway edge (stream-one compatible clients)
 @app.websocket("/xhttp/{proto}/{uid}")
-@app.websocket("/xhttp/{proto}/{uid}/")
-async def ws_xhttp(ws: WebSocket, proto: str, uid: str):
-    await _dispatch_tunnel(ws, proto, uid)
-
-
-# Catch-all: any custom inbound path ending with /{uuid}
-@app.websocket("/p/{network}/{proto}/{uid}")
-async def ws_generic(ws: WebSocket, network: str, proto: str, uid: str):
-    await _dispatch_tunnel(ws, proto, uid)
+async def ws_legacy_multi(ws: WebSocket, proto: str, uid: str):
+    await _dispatch_tunnel(ws, uid)
 
 
 from pages import DASHBOARD  # noqa: E402
