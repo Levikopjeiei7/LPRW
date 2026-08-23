@@ -341,61 +341,107 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
     @router.post("/xhttp-siz10/packet-up/{uuid}/{session_id}/{seq}")
     @router.post("/xhttp-siz10/packet-up/{uuid}/{session_id}/{seq}/")
     @router.post("/xhttp/packet-up/{uuid}/{session_id}/{seq}")
+    @router.post("/xhttp/packet-up/{uuid}/{session_id}/{seq}/")
     @router.put("/xhttp-siz10/packet-up/{uuid}/{session_id}/{seq}")
+    @router.put("/xhttp/packet-up/{uuid}/{session_id}/{seq}")
     async def packet_up(uuid: str, session_id: str, seq: int, request: Request):
+        """Xray XHTTP packet-up uplink.
+
+        Xray may split the VLESS header across multiple POSTs and POSTs may
+        arrive out of order.  The old implementation only retried parsing
+        seq=0, so if the header crossed a POST boundary the tunnel never
+        connected.  Keep an ordered packet window and consume it strictly in
+        sequence; before TCP exists, concatenate contiguous packets into the
+        handshake buffer and retry parsing after every packet.
+        """
         ensure_reaper()
+        if seq < 0 or seq > 0xFFFFFFFFFFFFFFFF:
+            raise HTTPException(400, "invalid sequence")
+
         sess = await get_or_create(
             session_id, uuid, "packet-up", is_allowed, register_conn, unregister_conn, _client_ip(request)
         )
         if sess.get("closed"):
             raise HTTPException(404, "session closed")
+
         body = await request.body()
-        if not body:
-            return {"ok": True}
         sess["last"] = time.time()
-        if on_usage and not on_usage(uuid, len(body)):
+
+        if body and on_usage and not on_usage(uuid, len(body)):
             await teardown(session_id, "quota")
             raise HTTPException(403, "quota")
-        try:
-            if sess["writer"] is None:
-                if seq != 0:
-                    sess["seq_buf"][seq] = body
-                    return {"ok": True, "buffered": True}
-                # may need buffering across packets for header - seq0 should have header
-                sess["buf"].extend(body)
-                try:
-                    await open_tcp_session(session_id, uuid, sess, bytes(sess["buf"]), get_proto, on_usage)
-                    sess["buf"].clear()
-                except ValueError as e:
-                    if "incomplete" in str(e):
-                        return {"ok": True, "buffered": True}
-                    raise
-                nxt = 1
-                while nxt in sess["seq_buf"]:
-                    pending = sess["seq_buf"].pop(nxt)
-                    sess["writer"].write(pending)
-                    nxt += 1
-                sess["next_seq"] = nxt
-                return {"ok": True, "connected": True}
 
-            if seq == sess["next_seq"]:
-                sess["writer"].write(body)
+        # Duplicate POSTs are harmless.  Xray uses monotonically increasing
+        # sequence numbers; retaining only the first copy also prevents a
+        # retransmission from being written twice to the target TCP socket.
+        if seq < sess["next_seq"]:
+            return Response(status_code=200, headers={k: v for k, v in HDR.items() if k != "content-type"})
+        if seq in sess["seq_buf"]:
+            return Response(status_code=200, headers={k: v for k, v in HDR.items() if k != "content-type"})
+        if len(sess["seq_buf"]) >= 512:
+            await teardown(session_id, "sequence window full")
+            raise HTTPException(409, "too many buffered packets")
+
+        sess["seq_buf"][seq] = body
+
+        try:
+            # Consume only a contiguous sequence.  This is important for
+            # packet-up because seq=1 can arrive before seq=0.
+            while sess["next_seq"] in sess["seq_buf"]:
+                current = sess["seq_buf"].pop(sess["next_seq"])
+                current_seq = sess["next_seq"]
                 sess["next_seq"] += 1
-                while sess["next_seq"] in sess["seq_buf"]:
-                    pending = sess["seq_buf"].pop(sess["next_seq"])
-                    sess["writer"].write(pending)
-                    sess["next_seq"] += 1
-            else:
-                sess["seq_buf"][seq] = body
-            if sess["writer"].transport.get_write_buffer_size() > 2 * 1024 * 1024:
-                await sess["writer"].drain()
+
+                if sess["writer"] is None:
+                    # The VLESS/Trojan handshake can span several POSTs.
+                    # Never discard an incomplete packet: append it and retry
+                    # after the next contiguous sequence arrives.
+                    if current:
+                        sess["buf"].extend(current)
+                    if len(sess["buf"]) > 128 * 1024:
+                        raise ValueError("bad header")
+
+                    try:
+                        await open_tcp_session(
+                            session_id, uuid, sess, bytes(sess["buf"]), get_proto, on_usage
+                        )
+                        # open_tcp_session consumes the complete protocol
+                        # header and writes its initial payload.  Therefore the
+                        # accumulated buffer must not be sent again.
+                        sess["buf"].clear()
+                    except ValueError as e:
+                        if "incomplete" in str(e):
+                            continue
+                        raise
+
+                    # TCP is now ready. Any bytes after the handshake were
+                    # already delivered by open_tcp_session; subsequent
+                    # packets are plain application data.
+                    continue
+
+                if current:
+                    writer = sess["writer"]
+                    if writer is None or writer.is_closing():
+                        raise ConnectionError("target connection closed")
+                    writer.write(current)
+                    if writer.transport.get_write_buffer_size() > 2 * 1024 * 1024:
+                        await writer.drain()
+
         except HTTPException:
             raise
+        except ValueError as e:
+            logger.warning("packet-up header fail sid=%s seq=%s: %s", session_id[:8], seq, e)
+            await teardown(session_id, str(e))
+            raise HTTPException(400, "invalid xhttp handshake")
         except Exception as e:
-            logger.warning("packet-up fail: %s", e)
+            logger.warning("packet-up fail sid=%s seq=%s: %s", session_id[:8], seq, e)
             await teardown(session_id, str(e))
             raise HTTPException(502, "write failed")
-        return {"ok": True}
+
+        # Xray only needs a successful HTTP status for each uplink POST.
+        # Keep the response body empty; this matches Xray's packet-up server
+        # behavior and avoids JSON/content-length surprises through proxies.
+        return Response(status_code=200, headers={k: v for k, v in HDR.items() if k != "content-type"})
 
     @router.get("/debug/xhttp-routes")
     async def debug_routes():
