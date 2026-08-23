@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.3.0"
+VERSION = "4.4.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -298,11 +298,12 @@ def get_inbound(link: dict) -> dict:
 
 
 def tunnel_path(ib: dict, uid: str) -> str:
-    """Canonical tunnel path — same shape as working /ws/{uid}."""
+    """Path in client share link."""
     proto = ib.get("proto", "vless")
     network = ib.get("network", "ws")
     if network == "xhttp":
-        return f"/xhttp/{uid}"
+        mode = ib.get("xhttp_mode") or "stream-up"
+        return f"/xhttp/{mode}/{uid}"
     if network == "httpupgrade":
         return f"/hu/{uid}"
     if proto == "trojan":
@@ -338,12 +339,19 @@ def share(link: dict, h: Optional[str] = None) -> str:
         plugin = quote(f"v2ray-plugin;mode={mode};path={path};host={h};tls" + ("" if security == "tls" else ""))
         return f"ss://{userinfo}?plugin={plugin}#{lab}"
 
-    # On Railway the edge only reliably carries framed WebSocket.
-    # Distinct paths keep inbounds separate; client type chosen for max compatibility.
-    # Always ws framing — Railway/uvicorn only terminate real WebSocket.
-    # Paths /ws /hu /xhttp still separate inbounds; ?ed=2560 = early data.
-    ctype = "ws"
-    path_for_client = path
+    if network == "xhttp":
+        ctype = "xhttp"
+        mode = ib.get("xhttp_mode") or "stream-up"
+        path_for_client = path  # /xhttp/{mode}/{uuid}
+        use_alpn = "h2,http/1.1"
+    elif network == "httpupgrade":
+        ctype = "httpupgrade"
+        path_for_client = path + "?ed=2560"
+        use_alpn = "http/1.1"
+    else:
+        ctype = "ws"
+        path_for_client = path
+        use_alpn = "http/1.1"
 
     if proto == "trojan":
         params = {
@@ -352,8 +360,10 @@ def share(link: dict, h: Optional[str] = None) -> str:
             "host": h,
             "path": path_for_client,
         }
+        if network == "xhttp":
+            params["mode"] = ib.get("xhttp_mode") or "stream-up"
         if security == "tls":
-            params.update({"sni": sni, "fp": fp, "alpn": alpn})
+            params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
         return f"trojan://{uid}@{h}:443?{q}#{lab}"
 
@@ -364,8 +374,10 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "host": h,
         "path": path_for_client,
     }
+    if network == "xhttp":
+        params["mode"] = ib.get("xhttp_mode") or "stream-up"
     if security == "tls":
-        params.update({"sni": sni, "fp": fp, "alpn": alpn})
+        params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
     return f"vless://{uid}@{h}:443?{q}#{lab}"
 
@@ -643,7 +655,7 @@ async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
         if body.network == "ws":
             path = f"/{body.proto}-ws"
         elif body.network == "xhttp":
-            path = "/xhttp"
+            path = "/xhttp/stream-up"
         else:
             path = "/hu"
     if not path.startswith("/"):
@@ -1127,6 +1139,20 @@ async def ws_xhttp(ws: WebSocket, uid: str):
 async def ws_legacy_multi(ws: WebSocket, proto: str, uid: str):
     await _dispatch_tunnel(ws, uid)
 
+
+
+# ── Real XHTTP (HTTP GET downlink + POST uplink) ─────────────────────────────
+from protocol.xhttp import bind_handlers as bind_xhttp
+
+def _xhttp_proto(uid: str) -> str:
+    lk = find_link(uid) or LINKS.get(uid)
+    if not lk:
+        return "vless"
+    return get_inbound(lk).get("proto") or lk.get("proto") or "vless"
+
+bind_xhttp(find_link, on_usage, reg_conn, unreg_conn, _xhttp_proto)
+from protocol.xhttp import router as xhttp_router
+app.include_router(xhttp_router)
 
 from pages import DASHBOARD  # noqa: E402
 
