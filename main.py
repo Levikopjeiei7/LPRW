@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.5.0"
+VERSION = "4.6.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -302,8 +302,10 @@ def tunnel_path(ib: dict, uid: str) -> str:
     proto = ib.get("proto", "vless")
     network = ib.get("network", "ws")
     if network == "xhttp":
-        # Always stream-up — most compatible pure-Python server mode on Railway
-        return f"/xhttp/stream-up/{uid}"
+        mode = (ib.get("xhttp_mode") or "stream-up")
+        if mode not in ("stream-up", "packet-up"):
+            mode = "stream-up"
+        return f"/xhttp-siz10/{mode}/{uid}"
     if network == "httpupgrade":
         return f"/hu/{uid}"
     if proto == "trojan":
@@ -361,7 +363,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
             "path": path_for_client,
         }
         if network == "xhttp":
-            params["mode"] = "stream-up"
+            params["mode"] = mode if (mode := (ib.get("xhttp_mode") or "stream-up")) in ("stream-up", "packet-up") else "stream-up"
         if security == "tls":
             params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -375,7 +377,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "path": path_for_client,
     }
     if network == "xhttp":
-        params["mode"] = "stream-up"
+        params["mode"] = mode if (mode := (ib.get("xhttp_mode") or "stream-up")) in ("stream-up", "packet-up") else "stream-up"
     if security == "tls":
         params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -655,7 +657,7 @@ async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
         if body.network == "ws":
             path = f"/{body.proto}-ws"
         elif body.network == "xhttp":
-            path = "/xhttp/stream-up"
+            path = "/xhttp-siz10/stream-up"
         else:
             path = "/hu"
     if not path.startswith("/"):
