@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.1.0"
+VERSION = "4.2.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -338,26 +338,22 @@ def share(link: dict, h: Optional[str] = None) -> str:
         plugin = quote(f"v2ray-plugin;mode={mode};path={path};host={h};tls" + ("" if security == "tls" else ""))
         return f"ss://{userinfo}?plugin={plugin}#{lab}"
 
-    # Client transport type
-    ctype = network
-    if network == "httpupgrade":
-        ctype = "httpupgrade"
-    elif network == "xhttp":
-        ctype = "xhttp"
-    else:
-        ctype = "ws"
+    # On Railway the edge only reliably carries framed WebSocket.
+    # Distinct paths keep inbounds separate; client type chosen for max compatibility.
+    # Always ws framing — Railway/uvicorn only terminate real WebSocket.
+    # Paths /ws /hu /xhttp still separate inbounds; ?ed=2560 = early data.
+    ctype = "ws"
+    path_for_client = path + "?ed=2560"
 
     if proto == "trojan":
         params = {
             "security": security if security != "none" else "none",
             "type": ctype,
             "host": h,
-            "path": path,
+            "path": path_for_client,
         }
         if security == "tls":
             params.update({"sni": sni, "fp": fp, "alpn": alpn})
-        if ctype == "xhttp":
-            params["mode"] = ib.get("xhttp_mode") or "stream-one"
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
         return f"trojan://{uid}@{h}:443?{q}#{lab}"
 
@@ -366,12 +362,10 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "security": security if security != "none" else "none",
         "type": ctype,
         "host": h,
-        "path": path,
+        "path": path_for_client,
     }
     if security == "tls":
         params.update({"sni": sni, "fp": fp, "alpn": alpn})
-    if ctype == "xhttp":
-        params["mode"] = ib.get("xhttp_mode") or "stream-one"
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
     return f"vless://{uid}@{h}:443?{q}#{lab}"
 

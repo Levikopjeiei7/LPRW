@@ -454,42 +454,116 @@ $('#lp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 USER_PORTAL = r'''<!DOCTYPE html>
 <html lang="fa" dir="rtl" data-theme="dark">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{LABEL}} · LPRW</title>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#06080f;--card:rgba(18,22,36,.94);--bd:rgba(255,255,255,.08);--tx:#eef1f8;--mu:#8b93a8;--pr:#818cf8;--ok:#34d399;--er:#f87171;--g:linear-gradient(135deg,#6366f1,#d946ef)}
-*{box-sizing:border-box;margin:0;padding:0}body{font-family:Vazirmatn,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;padding:24px;display:flex;justify-content:center}
-.card{width:100%;max-width:480px;background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:28px;margin-top:20px}
-h1{font-size:1.4rem;font-weight:800;margin-bottom:4px}
-.sub{color:var(--mu);font-size:.85rem;margin-bottom:18px}
-.row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd);font-size:.9rem}
-.badge{display:inline-block;padding:4px 10px;border-radius:99px;font-size:.75rem;font-weight:700}
+:root{--bg:#06080f;--card:rgba(16,19,32,.92);--bd:rgba(255,255,255,.08);--tx:#f1f3f9;--mu:#8b93a8;--pr:#818cf8;--ok:#34d399;--er:#f87171;--g:linear-gradient(135deg,#6366f1,#a855f7 50%,#ec4899);--shadow:0 30px 80px rgba(0,0,0,.55)}
+[data-theme="light"]{--bg:#f3f5fb;--card:#fff;--bd:rgba(15,23,42,.1);--tx:#0f172a;--mu:#64748b;--shadow:0 20px 50px rgba(15,23,42,.1)}
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:Vazirmatn,system-ui,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;line-height:1.7}
+body::before{content:"";position:fixed;width:520px;height:520px;top:-100px;right:-80px;background:radial-gradient(circle,rgba(99,102,241,.28),transparent 70%);filter:blur(40px);pointer-events:none}
+.wrap{max-width:920px;margin:0 auto;padding:28px 18px 60px;position:relative;z-index:1}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}.brand .mk{width:48px;height:48px;border-radius:14px;background:var(--g);display:grid;place-items:center;font-weight:900;color:#fff}
+.brand h1{font-size:1.25rem;font-weight:800}.brand small{color:var(--mu);font-size:.78rem}
+.theme{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700}
+.hero{background:var(--card);border:1px solid var(--bd);border-radius:24px;padding:28px;box-shadow:var(--shadow);margin-bottom:18px}
+.hero .name{font-size:1.5rem;font-weight:900;margin-bottom:8px}
+.badge{display:inline-flex;padding:5px 12px;border-radius:99px;font-size:.78rem;font-weight:700}
 .badge.ok{background:rgba(52,211,153,.15);color:var(--ok)}.badge.bad{background:rgba(248,113,113,.15);color:var(--er)}
-.bar{height:8px;background:rgba(255,255,255,.08);border-radius:99px;margin:12px 0 20px;overflow:hidden}
-.bar i{display:block;height:100%;background:var(--g);border-radius:99px}
-.btn{display:inline-flex;padding:10px 14px;border-radius:12px;border:1px solid var(--bd);background:rgba(99,102,241,.15);color:var(--pr);font-weight:700;cursor:pointer;font-family:inherit;margin:4px 4px 4px 0}
-code{display:block;background:rgba(0,0,0,.3);padding:12px;border-radius:10px;font-size:.72rem;word-break:break-all;margin:10px 0;direction:ltr;text-align:left}
-img{max-width:180px;border-radius:12px;margin:10px auto;display:block}
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>{{LABEL}}</h1>
-  <p class="sub">{{HOST}} · {{PROTO}}</p>
-  <div class="row"><span>وضعیت</span><span class="badge {{STATUS_CLASS}}">{{STATUS}}</span></div>
-  <div class="row"><span>مصرف</span><span>{{USED}} / {{VOL}}</span></div>
-  <div class="bar"><i style="width:{{PCT}}%"></i></div>
-  <div class="row"><span>انقضا</span><span>{{EXP}}</span></div>
-  <div class="row"><span>آنلاین</span><span>{{ONLINE}}</span></div>
-  <p style="margin-top:16px;font-size:.8rem;color:var(--mu)">لینک کانفیگ</p>
-  <code id="cfg">{{SHARE}}</code>
-  <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('cfg').textContent)">کپی کانفیگ</button>
-  <button class="btn" onclick="navigator.clipboard.writeText('{{SUB}}')">کپی ساب</button>
-  <img src="{{QR}}" alt="QR">
-  <p style="text-align:center;font-size:.75rem;color:var(--mu);margin-top:12px">LPRW {{VERSION}}</p>
+.bar{height:14px;background:rgba(128,128,128,.15);border-radius:99px;overflow:hidden;margin:18px 0 10px}.bar>i{display:block;height:100%;width:{{PCT}}%;background:var(--g);border-radius:99px}
+.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}@media(max-width:640px){.meta{grid-template-columns:1fr}}
+.meta .b{background:rgba(99,102,241,.08);border:1px solid var(--bd);border-radius:16px;padding:14px}.meta .t{font-size:.75rem;color:var(--mu);font-weight:600}.meta .v{font-size:1.05rem;font-weight:800;margin-top:4px}
+.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:22px;margin-bottom:16px;box-shadow:var(--shadow)}.card h3{font-size:1.05rem;font-weight:800;margin-bottom:14px}
+.share-box{background:rgba(0,0,0,.2);border:1px solid var(--bd);border-radius:14px;padding:12px;font-size:.78rem;word-break:break-all;font-family:ui-monospace,monospace;direction:ltr;text-align:left;max-height:90px;overflow:auto}
+[data-theme="light"] .share-box{background:#f8fafc}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.btn{border:1px solid var(--bd);background:rgba(99,102,241,.12);color:var(--pr);padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700;font-size:.85rem}
+.btn-p{background:var(--g);color:#fff;border:none}
+.qr{width:100%;max-width:200px;border-radius:16px;border:1px solid var(--bd);background:#fff;padding:8px;margin:0 auto;display:block}
+.cli-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.cli{display:block;background:rgba(99,102,241,.08);border:1px solid var(--bd);border-radius:14px;padding:14px;text-decoration:none;color:var(--tx)}.cli:hover{border-color:rgba(99,102,241,.45)}
+.cli-n{font-weight:800;font-size:.9rem}.cli-p{color:var(--mu);font-size:.72rem;margin:4px 0}.cli-a{color:var(--pr);font-size:.78rem;font-weight:700}
+.help-card{background:rgba(0,0,0,.15);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:10px}[data-theme="light"] .help-card{background:#f8fafc}
+.help-card h4{font-size:.92rem;margin-bottom:8px}.help-card pre{white-space:pre-wrap;font-family:inherit;font-size:.82rem;color:var(--mu);line-height:1.8}
+.steps{display:grid;gap:10px}.steps .s{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:14px;background:rgba(99,102,241,.07);border:1px solid var(--bd)}
+.steps .n{width:28px;height:28px;border-radius:50%;background:var(--g);color:#fff;display:grid;place-items:center;font-weight:800;font-size:.8rem;flex-shrink:0}
+.foot{text-align:center;color:var(--mu);font-size:.75rem;margin-top:28px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--bd);padding:12px 18px;border-radius:12px;box-shadow:var(--shadow);opacity:0;transition:.25s;z-index:9;font-weight:700}.toast.show{opacity:1}
+</style></head><body>
+<div class="wrap">
+<div class="top"><div class="brand"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="48" height="48"><div><h1>LPRW User</h1><small>پنل مصرف اختصاصی</small></div></div>
+<button class="theme" id="theme" type="button">☀ / ☾ حالت روز و شب</button></div>
+<div class="hero"><div class="name">{{LABEL}}</div><span class="badge {{STATUS_CLASS}}">{{STATUS}}</span>
+<div class="bar"><i></i></div>
+<div style="display:flex;justify-content:space-between;font-size:.85rem;color:var(--mu);flex-wrap:wrap;gap:8px">
+<span>مصرف: <strong style="color:var(--tx)">{{USED}}</strong></span>
+<span>سقف: <strong style="color:var(--tx)">{{VOL}}</strong></span>
+<span>{{PCT}}٪</span></div>
+<div class="meta">
+<div class="b"><div class="t">پروتکل</div><div class="v">{{PROTO}}</div></div>
+<div class="b"><div class="t">انقضا</div><div class="v">{{EXP}}</div></div>
+<div class="b"><div class="t">آنلاین الان</div><div class="v">{{ONLINE}}</div></div>
+</div></div>
+<div class="grid"><div>
+<div class="card"><h3>🔗 کانفیگ شما</h3>
+<div class="share-box" id="share">{{SHARE}}</div>
+<div class="actions"><button class="btn btn-p" id="copy">کپی کانفیگ</button>
+<button class="btn" id="copy-sub">کپی لینک ساب</button>
+<a class="btn" href="{{SUB}}" target="_blank">باز کردن ساب</a></div>
+<p style="margin-top:12px;font-size:.8rem;color:var(--mu)">لینک اشتراک: <code style="color:var(--pr)">{{SUB}}</code></p></div>
+<div class="card"><h3>📱 دانلود کلاینت</h3><div class="cli-grid">
+<a class="cli" href="https://github.com/2dust/v2rayNG/releases" target="_blank" rel="noopener"><div class="cli-n">v2rayNG</div><div class="cli-p">Android</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://github.com/2dust/v2rayN/releases" target="_blank" rel="noopener"><div class="cli-n">v2rayN</div><div class="cli-p">Windows</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://github.com/hiddify/hiddify-app/releases" target="_blank" rel="noopener"><div class="cli-n">Hiddify</div><div class="cli-p">All</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://apps.apple.com/app/streisand/id6450534064" target="_blank" rel="noopener"><div class="cli-n">Streisand</div><div class="cli-p">iOS</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://apps.apple.com/app/v2box-v2ray-client/id6446814690" target="_blank" rel="noopener"><div class="cli-n">V2Box</div><div class="cli-p">iOS</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://github.com/MatsuriDayo/NekoBoxForAndroid/releases" target="_blank" rel="noopener"><div class="cli-n">NekoBox</div><div class="cli-p">Android</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://github.com/MetaCubeX/ClashMetaForAndroid/releases" target="_blank" rel="noopener"><div class="cli-n">Clash Meta</div><div class="cli-p">Desktop</div><div class="cli-a">دانلود</div></a>
+<a class="cli" href="https://apps.apple.com/app/foxray/id6448898396" target="_blank" rel="noopener"><div class="cli-n">FoXray</div><div class="cli-p">iOS</div><div class="cli-a">دانلود</div></a>
+</div></div>
+<div class="card"><h3>📘 راهنمای اتصال</h3>
+<div class="steps">
+<div class="s"><div class="n">1</div><div>یکی از کلاینت‌های بالا را نصب کنید.</div></div>
+<div class="s"><div class="n">2</div><div>دکمه «کپی کانفیگ» را بزنید یا از QR استفاده کنید.</div></div>
+<div class="s"><div class="n">3</div><div>در کلاینت: Import from clipboard / افزودن از کلیپ‌بورد.</div></div>
+<div class="s"><div class="n">4</div><div>برای چند دستگاه از لینک سابسکریپشن استفاده کنید.</div></div>
+</div></div>
+<div class="card"><h3>🧩 آموزش کلاینت‌ها</h3>
+<div class="help-card"><h4>v2rayNG (اندروید)</h4><pre>1. اپ را نصب کنید\n2. روی + بزنید\n3. ورود از کلیپ‌بورد\n4. کانفیگ را وارد کنید\n5. اتصال را روشن کنید</pre></div>
+<div class="help-card"><h4>v2rayN (ویندوز)</h4><pre>1. برنامه را اجرا کنید\n2. Import from clipboard\n3. Set as active server\n4. System proxy = Automatic</pre></div>
+<div class="help-card"><h4>Streisand / V2Box (آیفون)</h4><pre>1. نصب از App Store\n2. Paste لینک یا ساب\n3. افزودن پروفایل و اتصال</pre></div>
+<div class="help-card"><h4>Hiddify</h4><pre>1. نصب\n2. افزودن از کلیپ‌بورد یا QR\n3. اتصال</pre></div>
+<div class="help-card"><h4>NekoBox</h4><pre>1. نصب\n2. New profile from clipboard\n3. Connect</pre></div>
+<div class="help-card"><h4>سایر کلاینت‌ها</h4><pre>لینک Subscription را در Add Subscription وارد و Update کنید.</pre></div>
+</div></div>
+<div>
+<div class="card" style="text-align:center"><h3>QR Code</h3>
+<img class="qr" src="{{QR}}" alt="QR">
+<p style="margin-top:10px;font-size:.78rem;color:var(--mu)">اسکن با کلاینت موبایل</p></div>
+<div class="card"><h3>ℹ️ جزئیات</h3>
+<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">هاست</span><strong>{{HOST}}</strong></div>
+<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">نسخه</span><strong>{{VERSION}}</strong></div>
+<div style="display:flex;justify-content:space-between;padding:8px 0"><span style="color:var(--mu)">یادداشت</span><strong>{{REMARK}}</strong></div>
 </div>
-</body>
-</html>
+<div class="card"><h3>💡 نکات سرعت</h3>
+<ul style="padding-right:18px;color:var(--mu);font-size:.85rem">
+<li>کلاینت را به‌روز نگه دارید.</li>
+<li>از اینترنت پایدار تست کنید.</li>
+<li>اگر پینگ بالا بود زمان دیگری امتحان کنید.</li>
+<li>روی هر دستگاه فقط یک پروفایل فعال کافی است.</li>
+</ul></div>
+</div></div>
+<div class="foot">LPRW · Leviko Panel Railway · پنل کاربری</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)};
+const apply=t=>{document.documentElement.setAttribute('data-theme',t);localStorage.setItem('lprw_user_theme',t)};
+apply(localStorage.getItem('lprw_user_theme')||'dark');
+document.getElementById('theme').onclick=()=>{const n=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';apply(n);toast(n==='dark'?'حالت شب':'حالت روز')};
+document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(document.getElementById('share').textContent).then(()=>toast('کانفیگ کپی شد'));
+document.getElementById('copy-sub').onclick=()=>navigator.clipboard.writeText('{{SUB}}').then(()=>toast('لینک ساب کپی شد'));
+</script></body></html>
 '''
