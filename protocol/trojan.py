@@ -1,4 +1,4 @@
-"""LPRW Trojan-WS relay — fixed header parse (CRLF after request)."""
+"""LPRW Trojan relay — high-performance WS gateway (v4)."""
 from __future__ import annotations
 
 import asyncio
@@ -13,15 +13,10 @@ logger = logging.getLogger("LPRW.trojan")
 
 
 def parse_trojan_header(data: bytes):
-    """
-    Trojan over TLS/WS first packet:
-      hex(SHA224(password)) | CRLF | CMD ATYP ADDR PORT | CRLF | payload
-    Auth is done via URL path UUID; body password line is skipped.
-    """
     if b"\r\n" not in data:
         raise ValueError("no crlf")
-    _pw_line, rest = data.split(b"\r\n", 1)
-    # optional empty line some clients send
+    pw_b, rest = data.split(b"\r\n", 1)
+    password = pw_b.decode("utf-8", "ignore").strip()
     if rest.startswith(b"\r\n"):
         rest = rest[2:]
     if len(rest) < 7:
@@ -30,34 +25,21 @@ def parse_trojan_header(data: bytes):
     atyp = rest[1]
     pos = 2
     if atyp == 0x01:
-        if len(rest) < pos + 4 + 2:
-            raise ValueError("short ipv4")
-        address = socket.inet_ntop(socket.AF_INET, rest[pos : pos + 4])
+        address = socket.inet_ntop(socket.AF_INET, rest[pos:pos + 4])
         pos += 4
     elif atyp == 0x03:
-        if len(rest) < pos + 1:
-            raise ValueError("short domain len")
         n = rest[pos]
         pos += 1
-        if len(rest) < pos + n + 2:
-            raise ValueError("short domain")
-        address = rest[pos : pos + n].decode("utf-8", "ignore")
+        address = rest[pos:pos + n].decode("utf-8", "ignore")
         pos += n
     elif atyp == 0x04:
-        if len(rest) < pos + 16 + 2:
-            raise ValueError("short ipv6")
-        address = socket.inet_ntop(socket.AF_INET6, rest[pos : pos + 16])
+        address = socket.inet_ntop(socket.AF_INET6, rest[pos:pos + 16])
         pos += 16
     else:
         raise ValueError(f"bad atyp {atyp}")
-    port = int.from_bytes(rest[pos : pos + 2], "big")
+    port = int.from_bytes(rest[pos:pos + 2], "big")
     pos += 2
-    # required CRLF after Trojan request
-    if rest[pos : pos + 2] == b"\r\n":
-        pos += 2
-    elif rest[pos : pos + 1] == b"\n":
-        pos += 1
-    return cmd, address, port, rest[pos:]
+    return password, cmd, address, port, rest[pos:]
 
 
 async def relay_ws_to_tcp(ws, writer, gate):
@@ -117,26 +99,16 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
     conn_id = register_conn(password)
     writer = None
     try:
-        buf = b""
-        # assemble until we can parse header (password line + request + CRLF)
-        while True:
-            msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
-            if msg["type"] == "websocket.disconnect":
-                return
-            chunk = msg.get("bytes") or (msg.get("text") or "").encode()
-            if not chunk:
-                continue
-            buf += chunk
-            try:
-                cmd, address, port, payload = parse_trojan_header(buf)
-                break
-            except ValueError:
-                if len(buf) > 8192:
-                    raise
-                continue
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=12.0)
+        if first_msg["type"] == "websocket.disconnect":
+            return
+        first_chunk = first_msg.get("bytes") or (first_msg.get("text") or "").encode()
+        if not first_chunk:
+            return
 
+        _, cmd, address, port, payload = parse_trojan_header(first_chunk)
         gate = QuotaGate(password, on_usage)
-        if not await gate.add(len(buf)):
+        if not await gate.add(len(first_chunk)):
             await ws.close(code=1008, reason="quota")
             return
 
@@ -144,12 +116,13 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
             await ws.close(code=1008, reason="udp not supported")
             return
 
-        reader, writer = await open_tcp(address, port, timeout=10.0)
+        reader, writer = await open_tcp(address, port, timeout=8.0)
         tune_socket(writer)
 
         if payload:
             writer.write(payload)
             await writer.drain()
+            await gate.add(len(payload))
 
         done, pending = await asyncio.wait(
             {
@@ -164,9 +137,7 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
                 await t
             except asyncio.CancelledError:
                 pass
-    except (WebSocketDisconnect, asyncio.TimeoutError):
-        pass
-    except Exception as e:
+    except (WebSocketDisconnect, Exception) as e:
         logger.debug("trojan: %s", e)
     finally:
         if writer:
