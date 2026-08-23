@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.7.0"
+VERSION = "4.8.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -302,9 +302,9 @@ def tunnel_path(ib: dict, uid: str) -> str:
     proto = ib.get("proto", "vless")
     network = ib.get("network", "ws")
     if network == "xhttp":
-        mode = (ib.get("xhttp_mode") or "stream-up")
+        mode = (ib.get("xhttp_mode") or "packet-up")
         if mode not in ("stream-up", "packet-up"):
-            mode = "stream-up"
+            mode = "packet-up"
         return f"/xhttp-siz10/{mode}/{uid}"
     if network == "httpupgrade":
         return f"/hu/{uid}"
@@ -343,9 +343,12 @@ def share(link: dict, h: Optional[str] = None) -> str:
 
     if network == "xhttp":
         ctype = "xhttp"
-        mode = ib.get("xhttp_mode") or "stream-up"
-        path_for_client = path  # /xhttp/{mode}/{uuid}
-        use_alpn = "h2,http/1.1"
+        mode = ib.get("xhttp_mode") or "packet-up"
+        if mode not in ("stream-up", "packet-up"):
+            mode = "packet-up"
+        path_for_client = path
+        # http/1.1: more reliable stream/packet through Railway edge than h2
+        use_alpn = "http/1.1"
     elif network == "httpupgrade":
         ctype = "httpupgrade"
         path_for_client = path
@@ -363,7 +366,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
             "path": path_for_client,
         }
         if network == "xhttp":
-            params["mode"] = mode if (mode := (ib.get("xhttp_mode") or "stream-up")) in ("stream-up", "packet-up") else "stream-up"
+            params["mode"] = (ib.get("xhttp_mode") or "packet-up") if (ib.get("xhttp_mode") or "packet-up") in ("stream-up", "packet-up") else "packet-up"
         if security == "tls":
             params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -377,7 +380,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "path": path_for_client,
     }
     if network == "xhttp":
-        params["mode"] = mode if (mode := (ib.get("xhttp_mode") or "stream-up")) in ("stream-up", "packet-up") else "stream-up"
+            params["mode"] = (ib.get("xhttp_mode") or "packet-up") if (ib.get("xhttp_mode") or "packet-up") in ("stream-up", "packet-up") else "packet-up"
     if security == "tls":
         params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -480,7 +483,7 @@ class InboundIn(BaseModel):
     security: str = Field(default="tls", pattern="^(tls|none)$")
     path: str = Field(default="", max_length=120)
     ss_method: str = Field(default="aes-256-gcm")
-    xhttp_mode: str = Field(default="stream-up")
+    xhttp_mode: str = Field(default="packet-up")
 
 
 class LinkIn(BaseModel):
@@ -1152,7 +1155,19 @@ def _xhttp_proto(uid: str) -> str:
         return "vless"
     return get_inbound(lk).get("proto") or lk.get("proto") or "vless"
 
-bind_xhttp(find_link, on_usage, reg_conn, unreg_conn, _xhttp_proto)
+def _xhttp_allowed(uid: str):
+    """Authorize by uuid; normalize dashes/case."""
+    lk = find_link(uid)
+    if lk:
+        return lk
+    # fallback: link exists but quota/expired — still reject
+    compact = uid.replace("-", "").lower()
+    for lid, lk in LINKS.items():
+        if lid.replace("-", "").lower() == compact:
+            return find_link(lid)
+    return None
+
+bind_xhttp(_xhttp_allowed, on_usage, reg_conn, unreg_conn, _xhttp_proto)
 from protocol.xhttp import router as xhttp_router
 app.include_router(xhttp_router)
 
@@ -1160,6 +1175,47 @@ app.include_router(xhttp_router)
 async def debug_xhttp():
     from protocol import xhttp as xh
     return {"ok": True, "sessions": len(xh.SESSIONS), "routes": "xhttp live"}
+
+
+@app.get("/debug/auth/{uid}")
+async def debug_auth(uid: str):
+    """Why a UUID is accepted or rejected for tunnels."""
+    raw = LINKS.get(uid)
+    if raw is None:
+        compact = uid.replace("-", "").lower()
+        for lid, lk in LINKS.items():
+            if lid.replace("-", "").lower() == compact:
+                raw = lk
+                uid = lid
+                break
+    if raw is None:
+        return {"ok": False, "reason": "uuid_not_found", "links": len(LINKS)}
+    reasons = []
+    if not raw.get("active", True):
+        reasons.append("disabled")
+    if raw.get("vol", 0) > 0 and raw.get("used", 0) >= raw["vol"]:
+        reasons.append("quota_exceeded")
+    exp = raw.get("exp")
+    if exp:
+        try:
+            if datetime.fromisoformat(exp) < now():
+                reasons.append("expired")
+        except Exception:
+            pass
+    ib = get_inbound(raw)
+    return {
+        "ok": not reasons,
+        "uuid": uid,
+        "label": raw.get("label"),
+        "active": raw.get("active", True),
+        "reasons": reasons or ["allowed"],
+        "proto": ib.get("proto"),
+        "network": ib.get("network"),
+        "xhttp_mode": ib.get("xhttp_mode"),
+        "used": raw.get("used", 0),
+        "vol": raw.get("vol", 0),
+    }
+
 
 from pages import DASHBOARD  # noqa: E402
 
