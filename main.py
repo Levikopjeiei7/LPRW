@@ -1,7 +1,7 @@
 """
 LPRW — Leviko Panel Railway v4.0
 Multi-protocol gateway: VLESS / Trojan / Shadowsocks
-Transports: WS / HTTPUpgrade / XHTTP (path-based)
+Transport: WebSocket only
 Inbound-based config management.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.8.1"
+VERSION = "4.8.3"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -141,36 +141,7 @@ XLOCK = asyncio.Lock()
 SAVE_LOCK = asyncio.Lock()
 _pending = False
 
-DEFAULT_INBOUNDS = [
-    {
-        "id": "default-vless-ws",
-        "name": "VLESS-WS-TLS",
-        "proto": "vless",
-        "network": "ws",
-        "security": "tls",
-        "path": "/ws",
-        "active": True,
-    },
-    {
-        "id": "default-trojan-ws",
-        "name": "Trojan-WS-TLS",
-        "proto": "trojan",
-        "network": "ws",
-        "security": "tls",
-        "path": "/trojan-ws",
-        "active": True,
-    },
-    {
-        "id": "default-ss-ws",
-        "name": "SS-WS-TLS",
-        "proto": "ss",
-        "network": "ws",
-        "security": "tls",
-        "path": "/ss-ws",
-        "ss_method": "aes-256-gcm",
-        "active": True,
-    },
-]
+DEFAULT_INBOUNDS = []
 
 
 def act(msg: str, level: str = "info"):
@@ -206,9 +177,16 @@ async def load():
         SUBS.update(d.get("subs", {}))
         if d.get("inbounds"):
             INBOUNDS.update(d["inbounds"])
-        else:
-            for ib in DEFAULT_INBOUNDS:
-                INBOUNDS[ib["id"]] = dict(ib)
+        # WebSocket-only build: keep only WebSocket inbounds.
+        INBOUNDS.clear()
+        for iid, ib in (d.get("inbounds") or {}).items():
+            if (ib.get("network") or "ws").lower() == "ws":
+                INBOUNDS[iid] = dict(ib)
+        # Drop links bound to removed transports; keep only WebSocket links.
+        for lid, lk in list(LINKS.items()):
+            ib = INBOUNDS.get(lk.get("inbound_id"))
+            if ib is not None and (ib.get("network") or "ws").lower() != "ws":
+                LINKS.pop(lid, None)
         if "ah" in d:
             _admin = d["ah"]
         if "settings" in d:
@@ -218,9 +196,7 @@ async def load():
         log.info("loaded %s links %s subs %s inbounds", len(LINKS), len(SUBS), len(INBOUNDS))
     except Exception as e:
         log.warning("load %s", e)
-        if not INBOUNDS:
-            for ib in DEFAULT_INBOUNDS:
-                INBOUNDS[ib["id"]] = dict(ib)
+        # No default inbounds are created in the WS-only build.
 
 
 async def save():
@@ -300,14 +276,6 @@ def get_inbound(link: dict) -> dict:
 def tunnel_path(ib: dict, uid: str) -> str:
     """Path in client share link."""
     proto = ib.get("proto", "vless")
-    network = ib.get("network", "ws")
-    if network == "xhttp":
-        mode = (ib.get("xhttp_mode") or "packet-up")
-        if mode not in ("stream-up", "packet-up"):
-            mode = "packet-up"
-        return f"/xhttp-siz10/{mode}/{uid}"
-    if network == "httpupgrade":
-        return f"/hu/{uid}"
     if proto == "trojan":
         return f"/trojan-ws/{uid}"
     if proto == "ss":
@@ -336,29 +304,12 @@ def share(link: dict, h: Optional[str] = None) -> str:
             f"{method}:{password}@{h}:443".encode()
         ).decode().rstrip("=")
         mode = "websocket"
-        if network == "httpupgrade":
-            mode = "websocket"
         plugin = quote(f"v2ray-plugin;mode={mode};path={path};host={h};tls" + ("" if security == "tls" else ""))
         return f"ss://{userinfo}?plugin={plugin}#{lab}"
 
-    if network == "xhttp":
-        ctype = "xhttp"
-        mode = ib.get("xhttp_mode") or "packet-up"
-        if mode not in ("stream-up", "packet-up"):
-            mode = "packet-up"
-        path_for_client = path
-        # XHTTP works with both HTTP/2 and HTTP/1.1. Prefer h2 first;
-        # Xray's split-http transport is designed around long-lived HTTP
-        # streams, while HTTP/1.1 remains the fallback for restrictive edges.
-        use_alpn = "h2,http/1.1"
-    elif network == "httpupgrade":
-        ctype = "httpupgrade"
-        path_for_client = path
-        use_alpn = "http/1.1"
-    else:
-        ctype = "ws"
-        path_for_client = path
-        use_alpn = "http/1.1"
+    ctype = "ws"
+    path_for_client = path
+    use_alpn = "http/1.1"
 
     if proto == "trojan":
         params = {
@@ -367,8 +318,6 @@ def share(link: dict, h: Optional[str] = None) -> str:
             "host": h,
             "path": path_for_client,
         }
-        if network == "xhttp":
-            params["mode"] = (ib.get("xhttp_mode") or "packet-up") if (ib.get("xhttp_mode") or "packet-up") in ("stream-up", "packet-up") else "packet-up"
         if security == "tls":
             params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -381,8 +330,6 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "host": h,
         "path": path_for_client,
     }
-    if network == "xhttp":
-            params["mode"] = (ib.get("xhttp_mode") or "packet-up") if (ib.get("xhttp_mode") or "packet-up") in ("stream-up", "packet-up") else "packet-up"
     if security == "tls":
         params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -481,11 +428,10 @@ class LoginIn(BaseModel):
 class InboundIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     proto: str = Field(..., pattern="^(vless|trojan|ss)$")
-    network: str = Field(..., pattern="^(ws|xhttp|httpupgrade)$")
+    network: str = Field(default="ws", pattern="^ws$")
     security: str = Field(default="tls", pattern="^(tls|none)$")
     path: str = Field(default="", max_length=120)
     ss_method: str = Field(default="aes-256-gcm")
-    xhttp_mode: str = Field(default="packet-up")
 
 
 class LinkIn(BaseModel):
@@ -659,12 +605,7 @@ async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
     iid = secrets.token_urlsafe(10)
     path = (body.path or "").strip()
     if not path:
-        if body.network == "ws":
-            path = f"/{body.proto}-ws"
-        elif body.network == "xhttp":
-            path = "/xhttp-siz10/stream-up"
-        else:
-            path = "/hu"
+        path = f"/{body.proto}-ws"
     if not path.startswith("/"):
         path = "/" + path
     ib = {
@@ -675,7 +616,6 @@ async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
         "security": body.security,
         "path": path,
         "ss_method": body.ss_method if body.proto == "ss" else None,
-        "xhttp_mode": body.xhttp_mode if body.network == "xhttp" else None,
         "active": True,
         "created": now().isoformat(),
     }
@@ -1129,56 +1069,6 @@ async def _dispatch_tunnel(ws: WebSocket, uid: str):
     asyncio.create_task(schedule_save())
 
 
-# Identical shape to working /ws/{uid}
-@app.websocket("/hu/{uid}")
-@app.websocket("/httpupgrade/{uid}")
-async def ws_httpupgrade(ws: WebSocket, uid: str):
-    await _dispatch_tunnel(ws, uid)
-
-
-@app.websocket("/xhttp/{uid}")
-async def ws_xhttp(ws: WebSocket, uid: str):
-    await _dispatch_tunnel(ws, uid)
-
-# legacy multi-segment paths still accepted
-@app.websocket("/hu/{proto}/{uid}")
-@app.websocket("/xhttp/{proto}/{uid}")
-async def ws_legacy_multi(ws: WebSocket, proto: str, uid: str):
-    await _dispatch_tunnel(ws, uid)
-
-
-
-# ── Real XHTTP (HTTP GET downlink + POST uplink) ─────────────────────────────
-from protocol.xhttp import bind_handlers as bind_xhttp
-
-def _xhttp_proto(uid: str) -> str:
-    lk = find_link(uid) or LINKS.get(uid)
-    if not lk:
-        return "vless"
-    return get_inbound(lk).get("proto") or lk.get("proto") or "vless"
-
-def _xhttp_allowed(uid: str):
-    """Authorize by uuid; normalize dashes/case."""
-    lk = find_link(uid)
-    if lk:
-        return lk
-    # fallback: link exists but quota/expired — still reject
-    compact = uid.replace("-", "").lower()
-    for lid, lk in LINKS.items():
-        if lid.replace("-", "").lower() == compact:
-            return find_link(lid)
-    return None
-
-bind_xhttp(_xhttp_allowed, on_usage, reg_conn, unreg_conn, _xhttp_proto)
-from protocol.xhttp import router as xhttp_router
-app.include_router(xhttp_router)
-
-@app.get("/debug/xhttp")
-async def debug_xhttp():
-    from protocol import xhttp as xh
-    return {"ok": True, "sessions": len(xh.SESSIONS), "routes": "xhttp live"}
-
-
 @app.get("/debug/auth/{uid}")
 async def debug_auth(uid: str):
     """Why a UUID is accepted or rejected for tunnels."""
@@ -1213,7 +1103,6 @@ async def debug_auth(uid: str):
         "reasons": reasons or ["allowed"],
         "proto": ib.get("proto"),
         "network": ib.get("network"),
-        "xhttp_mode": ib.get("xhttp_mode"),
         "used": raw.get("used", 0),
         "vol": raw.get("vol", 0),
     }

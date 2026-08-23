@@ -1,7 +1,7 @@
 # LPRW v4.8.1
 
 پنل پروکسی Railway — VLESS / Trojan / Shadowsocks  
-ترنسپورت: WS · HTTPUpgrade · XHTTP (path-based)
+ترنسپورت: WS only
 
 ## تغییرات v4
 
@@ -27,8 +27,6 @@
 | `/ws/{uuid}` | VLESS WS |
 | `/trojan-ws/{uuid}` | Trojan WS |
 | `/ss-ws/{uuid}` | Shadowsocks WS |
-| `/xhttp/{proto}/{uuid}` | XHTTP path |
-| `/hu/{proto}/{uuid}` | HTTPUpgrade path |
 | `/sub/{uuid}` | ساب تکی |
 | `/sub-group/{id}` | ساب گروهی |
 
@@ -38,10 +36,3 @@
 بعد از Generate Domain یک‌بار Redeploy بزنید.
 
 
-## XHTTP 4.8.1
-
-- XHTTP `packet-up` and `stream-up` routes now validate session credential/mode before attaching to an existing session.
-- Session teardown correctly handles cancelled asyncio tasks.
-- XHTTP downlink rejects unknown modes instead of creating invalid sessions.
-- Generated XHTTP links advertise `h2,http/1.1`, matching current Xray/3x-ui interoperability more closely.
-- The XHTTP URL layout remains compatible with the existing `/xhttp-siz10/{mode}/{uuid}/...` implementation used by this panel.

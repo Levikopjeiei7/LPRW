@@ -153,7 +153,7 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
     <section id="pg-inbounds" class="hidden">
       <div class="panel">
         <div class="panel-h"><h3>پروتکل و اینباند</h3><button class="btn btn-p btn-sm" onclick="openIbModal()">+ اینباند جدید</button></div>
-        <p style="color:var(--mu);font-size:.85rem;margin-bottom:12px">هر اینباند: پروتکل (vless/trojan/ss) + شبکه (ws/xhttp/httpupgrade) + امنیت (tls/none)</p>
+        <p style="color:var(--mu);font-size:.85rem;margin-bottom:12px">هر اینباند: پروتکل (vless/trojan/ss) + شبکه WebSocket + امنیت (tls/none)</p>
         <div style="overflow:auto"><table><thead><tr><th>نام</th><th>پروتکل</th><th>شبکه</th><th>امنیت</th><th>مسیر</th><th></th></tr></thead><tbody id="ib-body"></tbody></table></div>
       </div>
     </section>
@@ -214,13 +214,13 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 
 <div class="modal-bg" id="m-ib"><div class="modal">
   <h3>اینباند جدید</h3>
-  <div class="field"><label>نام</label><input id="mi-name" placeholder="مثلاً VLESS-XHTTP"></div>
+  <div class="field"><label>نام</label><input id="mi-name" placeholder="مثلاً VLESS-WS"></div>
   <div class="form-row">
     <div class="field"><label>پروتکل</label>
       <select id="mi-proto"><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select>
     </div>
     <div class="field"><label>شبکه</label>
-      <select id="mi-net"><option value="ws">WebSocket</option><option value="xhttp">XHTTP</option><option value="httpupgrade">HTTPUpgrade</option></select>
+      <select id="mi-net"><option value="ws">WebSocket</option></select>
     </div>
   </div>
   <div class="form-row">
