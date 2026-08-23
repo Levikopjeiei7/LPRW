@@ -1,82 +1,68 @@
 """
-Real XHTTP transport for LPRW (HTTP uplink + HTTP downlink sessions).
-Compatible with Xray/v2rayNG type=xhttp modes: stream-up, packet-up, stream-one.
-Independent implementation — not a copy of any third-party panel.
+Real XHTTP for LPRW — Xray client path rules:
+  config path:  /xhttp/stream-up/{uuid}/
+  client hits:  /xhttp/stream-up/{uuid}/{sessionId}
+            or: /xhttp/stream-up/{uuid}/{sessionId}/{seq}
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import secrets
-import socket
+import re
 import time
-from typing import Optional
+from typing import Callable, Optional
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 
-from protocol.vless import parse_vless_header
+from protocol.common import RELAY_BUF, open_tcp, tune_socket
 from protocol.trojan import parse_trojan_header
-from protocol.common import open_tcp, tune_socket, RELAY_BUF
+from protocol.vless import parse_vless_header
 
 logger = logging.getLogger("LPRW.xhttp")
-
 router = APIRouter()
 
 SESSIONS: dict = {}
 SLOCK = asyncio.Lock()
-REAPER_STARTED = False
-
-DOWN_Q_MAX = 256
-IDLE_SEC = 90
-CONNECT_TIMEOUT = 10.0
-
-RESP_HDR = {
+_reaper_on = False
+IDLE = 120.0
+RESP_H = {
     "content-type": "application/grpc",
     "cache-control": "no-cache, no-store",
     "x-accel-buffering": "no",
 }
 
 
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "?"
+async def _reaper():
+    while True:
+        await asyncio.sleep(20)
+        now = time.time()
+        async with SLOCK:
+            dead = [k for k, s in SESSIONS.items() if now - s["last"] > IDLE]
+        for k in dead:
+            await close_session(k, "idle")
 
 
-async def _ensure_reaper():
-    global REAPER_STARTED
-    if REAPER_STARTED:
-        return
-    REAPER_STARTED = True
-
-    async def reaper():
-        while True:
-            await asyncio.sleep(15)
-            now = time.time()
-            async with SLOCK:
-                dead = [sid for sid, s in SESSIONS.items() if now - s.get("last", 0) > IDLE_SEC]
-            for sid in dead:
-                await teardown(sid, "idle")
-
-    asyncio.create_task(reaper())
+def ensure_reaper():
+    global _reaper_on
+    if not _reaper_on:
+        _reaper_on = True
+        asyncio.create_task(_reaper())
 
 
-async def teardown(session_id: str, reason: str = ""):
+async def close_session(sid: str, reason: str = ""):
     async with SLOCK:
-        sess = SESSIONS.pop(session_id, None)
+        sess = SESSIONS.pop(sid, None)
     if not sess:
         return
     sess["closed"] = True
-    for key in ("up_task", "down_task"):
-        t = sess.get(key)
-        if t:
-            t.cancel()
-            try:
-                await t
-            except Exception:
-                pass
+    t = sess.get("down_task")
+    if t:
+        t.cancel()
+        try:
+            await t
+        except Exception:
+            pass
     w = sess.get("writer")
     if w:
         try:
@@ -84,158 +70,132 @@ async def teardown(session_id: str, reason: str = ""):
             await w.wait_closed()
         except Exception:
             pass
-    q = sess.get("down_q")
+    q = sess.get("q")
     if q:
         try:
             q.put_nowait(None)
         except Exception:
             pass
-    unreg = sess.get("unreg")
-    if unreg and sess.get("conn_id"):
+    if sess.get("unreg") and sess.get("cid"):
         try:
-            unreg(sess["conn_id"])
+            sess["unreg"](sess["cid"])
         except Exception:
             pass
-    logger.debug("xhttp session closed %s %s", session_id[:8], reason)
+    logger.info("xhttp close %s %s", sid[:12], reason)
 
 
-async def get_session(
-    uuid: str,
-    mode: str,
-    session_id: str,
-    ip: str,
-    is_allowed,
-    register_conn,
-    unregister_conn,
-) -> dict:
+async def get_sess(key, uuid, mode, is_allowed, reg, unreg) -> dict:
     async with SLOCK:
-        sess = SESSIONS.get(session_id)
-        if sess is not None:
-            sess["last"] = time.time()
-            return sess
+        s = SESSIONS.get(key)
+        if s:
+            s["last"] = time.time()
+            return s
         link = is_allowed(uuid)
         if not link:
-            raise HTTPException(403, "not authorized")
-        conn_id = register_conn(uuid)
-        sess = {
+            raise HTTPException(403, "forbidden")
+        cid = reg(uuid)
+        s = {
             "uuid": uuid,
             "mode": mode,
             "writer": None,
-            "reader": None,
-            "down_q": asyncio.Queue(maxsize=DOWN_Q_MAX),
+            "q": asyncio.Queue(maxsize=512),
             "last": time.time(),
-            "conn_id": conn_id,
-            "tcp_open": False,
+            "cid": cid,
+            "unreg": unreg,
             "closed": False,
-            "unreg": unregister_conn,
-            "link": link,
-            "seq_buf": {},
-            "next_seq": 0,
+            "vless": True,
         }
-        SESSIONS[session_id] = sess
-        logger.info("xhttp[%s] new session %s uuid=%s", mode, session_id[:8], uuid[:8])
-        return sess
+        SESSIONS[key] = s
+        return s
 
 
-async def open_tcp_from_chunk(first: bytes, proto: str):
-    if proto == "trojan":
-        _, cmd, address, port, payload = parse_trojan_header(first)
-        if cmd != 0x01:
-            raise ValueError("udp not supported")
-    else:
-        command, address, port, payload = parse_vless_header(first)
-        if command != 0x01:
-            raise ValueError("udp not supported")
-    reader, writer = await open_tcp(address, port, timeout=CONNECT_TIMEOUT)
-    tune_socket(writer)
-    if payload:
-        writer.write(payload)
-        await writer.drain()
-    return reader, writer, address, port
-
-
-async def pump_tcp_to_q(sess: dict, reader: asyncio.StreamReader, on_usage, vless_ack: bool):
+async def _pump(reader, sess, on_usage, uuid, key):
     first = True
-    uid = sess["uuid"]
-    q = sess["down_q"]
     try:
         while True:
             data = await reader.read(RELAY_BUF)
             if not data:
                 break
             sess["last"] = time.time()
-            if on_usage and not on_usage(uid, len(data)):
+            if on_usage and not on_usage(uuid, len(data)):
                 break
-            if vless_ack and first:
-                await q.put(b"\x00\x00" + data)
+            if sess.get("vless") and first:
+                await sess["q"].put(b"\x00\x00" + data)
                 first = False
             else:
-                await q.put(data)
+                await sess["q"].put(data)
     except Exception:
         pass
     finally:
         try:
-            await q.put(None)
+            await sess["q"].put(None)
         except Exception:
             pass
-        await teardown(sess.get("sid") or "", "tcp_eof")
+        await close_session(key, "tcp_done")
 
 
-async def open_tcp_session(sess: dict, first_chunk: bytes, proto: str, on_usage):
-    reader, writer, addr, port = await open_tcp_from_chunk(first_chunk, proto)
+async def _open_remote(sess, first, proto, on_usage, key):
+    if proto == "trojan":
+        _, cmd, address, port, payload = parse_trojan_header(first)
+        if cmd != 0x01:
+            raise ValueError("udp")
+        sess["vless"] = False
+    else:
+        cmd, address, port, payload = parse_vless_header(first)
+        if cmd != 0x01:
+            raise ValueError("udp")
+        sess["vless"] = True
+    reader, writer = await open_tcp(address, port, timeout=10.0)
+    tune_socket(writer)
+    if payload:
+        writer.write(payload)
+        await writer.drain()
     sess["writer"] = writer
-    sess["reader"] = reader
-    sess["tcp_open"] = True
-    logger.info("xhttp tcp -> %s:%s", addr, port)
-    # immediate vless ack into queue
-    if proto != "trojan":
+    if sess["vless"]:
         try:
-            sess["down_q"].put_nowait(b"\x00\x00")
+            sess["q"].put_nowait(b"\x00\x00")
         except Exception:
             pass
-    sess["down_task"] = asyncio.create_task(
-        pump_tcp_to_q(sess, reader, on_usage, vless_ack=False)
+    sess["down_task"] = asyncio.create_task(_pump(reader, sess, on_usage, sess["uuid"], key))
+    logger.info("xhttp tcp %s:%s", address, port)
+
+
+def _parse_xhttp_path(path: str):
+    path = path.split("?")[0]
+    m = re.match(
+        r"^/(?:xhttp|xhttp-siz10)/(stream-up|stream-one|packet-up|auto)/"
+        r"([^/]+)/([^/]+)(?:/(\d+))?/?$",
+        path,
     )
+    if not m:
+        return None
+    return m.group(1), m.group(2), m.group(3), m.group(4)
 
 
-def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_proto):
-    """Attach route handlers closed over panel callbacks."""
-
-    @router.api_route(
-        "/xhttp/{mode}/{uuid}/{session_id}",
-        methods=["GET", "POST", "PUT", "HEAD", "OPTIONS"],
-    )
-    @router.api_route(
-        "/xhttp-siz10/{mode}/{uuid}/{session_id}",
-        methods=["GET", "POST", "PUT", "HEAD", "OPTIONS"],
-    )
-    async def xhttp_session(mode: str, uuid: str, session_id: str, request: Request):
-        await _ensure_reaper()
-        mode = (mode or "stream-up").lower()
-        if mode not in ("stream-up", "packet-up", "stream-one", "auto"):
-            mode = "stream-up"
-
+def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_proto: Callable):
+    @router.api_route("/xhttp/{path:path}", methods=["GET", "POST", "PUT", "HEAD", "OPTIONS"])
+    @router.api_route("/xhttp-siz10/{path:path}", methods=["GET", "POST", "PUT", "HEAD", "OPTIONS"])
+    async def xhttp_any(path: str, request: Request):
+        ensure_reaper()
         if request.method == "OPTIONS":
-            return Response(status_code=204, headers=RESP_HDR)
+            return Response(status_code=204, headers=RESP_H)
+
+        full = request.url.path
+        parsed = _parse_xhttp_path(full)
+        if not parsed:
+            raise HTTPException(404, "bad xhttp path")
+
+        mode, uuid, session, seq = parsed
+        key = f"{uuid}:{session}"
+        proto = get_proto(uuid)
 
         if request.method in ("GET", "HEAD"):
-            # downlink stream
-            try:
-                sess = await get_session(
-                    uuid, mode, session_id, _client_ip(request),
-                    is_allowed, register_conn, unregister_conn,
-                )
-            except HTTPException:
-                raise
-            sess["sid"] = session_id
-            if sess.get("closed"):
-                raise HTTPException(404, "session closed")
+            sess = await get_sess(key, uuid, mode, is_allowed, register_conn, unregister_conn)
 
             async def gen():
-                q = sess["down_q"]
                 try:
                     while True:
-                        chunk = await q.get()
+                        chunk = await sess["q"].get()
                         if chunk is None:
                             break
                         sess["last"] = time.time()
@@ -245,25 +205,12 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
 
             return StreamingResponse(
                 gen(),
-                media_type=RESP_HDR["content-type"],
-                headers={k: v for k, v in RESP_HDR.items() if k != "content-type"},
+                media_type="application/grpc",
+                headers={k: v for k, v in RESP_H.items() if k != "content-type"},
             )
 
-        # POST/PUT uplink
-        try:
-            sess = await get_session(
-                uuid, mode, session_id, _client_ip(request),
-                is_allowed, register_conn, unregister_conn,
-            )
-        except HTTPException:
-            raise
-        sess["sid"] = session_id
-        if sess.get("closed"):
-            raise HTTPException(404, "session closed")
-
-        proto = get_proto(uuid)
+        sess = await get_sess(key, uuid, mode, is_allowed, register_conn, unregister_conn)
         writer = sess.get("writer")
-
         try:
             async for chunk in request.stream():
                 if not chunk:
@@ -271,12 +218,10 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
                 sess["last"] = time.time()
                 if on_usage and not on_usage(uuid, len(chunk)):
                     raise HTTPException(403, "quota")
-
                 if writer is None:
-                    await open_tcp_session(sess, chunk, proto, on_usage)
+                    await _open_remote(sess, chunk, proto, on_usage, key)
                     writer = sess["writer"]
                     continue
-
                 if writer.is_closing():
                     break
                 writer.write(chunk)
@@ -285,17 +230,9 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
         except HTTPException:
             raise
         except Exception as e:
-            logger.debug("xhttp uplink error: %s", e)
-            await teardown(session_id, str(e))
-            raise HTTPException(502, "uplink failed")
-
-        return Response(status_code=200, headers=RESP_HDR)
-
-    # stream-one shorthand: single path without session in template — client still sends session
-    @router.api_route("/xhttp/{uuid}", methods=["GET", "POST"])
-    async def xhttp_short(uuid: str, request: Request):
-        # fallback session id from header or generate per-request (weak)
-        sid = request.headers.get("x-session-id") or secrets.token_urlsafe(8)
-        return await xhttp_session("stream-up", uuid, sid, request)
+            logger.warning("xhttp uplink %s", e)
+            await close_session(key, str(e))
+            return Response(status_code=502)
+        return Response(status_code=200, headers=RESP_H)
 
     return router
