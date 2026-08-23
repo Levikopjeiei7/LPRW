@@ -1,242 +1,214 @@
-"""
-LPRW Shadowsocks-WS (AEAD chacha20-ietf-poly1305 / aes-256-gcm).
-Path auth: /ss-ws/{uuid}  — password = link id (uuid)
-"""
+"""LPRW Shadowsocks AEAD (aes-256-gcm / chacha20-ietf-poly1305) over WebSocket."""
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import logging
+import os
 import socket
 import struct
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
 from fastapi import WebSocket, WebSocketDisconnect
 
-from protocol.vless import RELAY_BUF, WRITE_HIGH_WATER, QuotaGate, open_tcp, tune_socket
+from protocol.common import RELAY_BUF, WRITE_HIGH_WATER, QuotaGate, open_tcp, tune_socket
 
 logger = logging.getLogger("LPRW.ss")
 
-METHODS = {
-    "chacha20-ietf-poly1305": (32, 32, ChaCha20Poly1305),
-    "aes-256-gcm": (32, 32, AESGCM),
-    "aes-128-gcm": (16, 16, AESGCM),
-}
-DEFAULT_METHOD = "chacha20-ietf-poly1305"
-TAG = 16
+TAG_LEN = 16
+NONCE_LEN = 12
+# AEAD length chunk: 2-byte len + tag, then payload + tag
+SALSA_SUBKEY = b"ss-subkey"
 
 
-def evp_bytes_to_key(password: bytes, key_len: int) -> bytes:
+def _evp_bytes_to_key(password: bytes, key_len: int) -> bytes:
     m = []
-    block = b""
+    i = 0
     while len(b"".join(m)) < key_len:
-        block = hashlib.md5(block + password).digest()
-        m.append(block)
+        data = password if i == 0 else m[i - 1] + password
+        m.append(hashlib.md5(data).digest())
+        i += 1
     return b"".join(m)[:key_len]
 
 
-def hkdf_sha1(key: bytes, salt: bytes, info: bytes, length: int) -> bytes:
-    # minimal HKDF-Extract+Expand with SHA1 (Shadowsocks AEAD)
-    from cryptography.hazmat.primitives import hashes
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
-    return HKDF(
-        algorithm=hashes.SHA1(),
-        length=length,
-        salt=salt,
-        info=info,
-    ).derive(key)
+def derive_key(password: str, method: str) -> bytes:
+    key_len = 32
+    return _evp_bytes_to_key(password.encode("utf-8"), key_len)
 
 
-class AeadCrypto:
-    def __init__(self, method: str, password: str, is_enc: bool, salt: bytes | None = None):
-        key_len, salt_len, cls = METHODS[method]
-        master = evp_bytes_to_key(password.encode("utf-8"), key_len)
-        if is_enc:
-            self.salt = salt or __import__("os").urandom(salt_len)
-        else:
-            if salt is None or len(salt) != salt_len:
-                raise ValueError("bad salt")
-            self.salt = salt
-        subkey = hkdf_sha1(master, self.salt, b"ss-subkey", key_len)
-        self.aead = cls(subkey)
+def make_aead(method: str, key: bytes, nonce: bytes):
+    if method in ("aes-256-gcm", "aes-128-gcm"):
+        return AESGCM(key)
+    if method in ("chacha20-ietf-poly1305", "xchacha20-ietf-poly1305"):
+        return ChaCha20Poly1305(key)
+    raise ValueError(f"unsupported method {method}")
+
+
+class AEADCipher:
+    """Shadowsocks 2022-style AEAD stream (classic AEAD per chunk)."""
+
+    def __init__(self, method: str, key: bytes, encrypt: bool):
+        self.method = method
+        self.key = key
+        self.encrypt = encrypt
         self.nonce_counter = 0
-        self.salt_len = salt_len
+        self.salt = os.urandom(32)
+        # subkey via HKDF-like: blake2 or simple hash for classic SS AEAD
+        sub = hashlib.sha1(self.salt + key).digest()
+        if len(sub) < 32:
+            sub = hashlib.sha256(self.salt + key).digest()
+        self.session_key = sub[:32]
+        self._buf = b""
 
     def _nonce(self) -> bytes:
-        n = self.nonce_counter
+        n = self.nonce_counter.to_bytes(NONCE_LEN, "little")
         self.nonce_counter += 1
-        return n.to_bytes(12, "little")
+        return n
 
-    def seal(self, plaintext: bytes) -> bytes:
-        return self.aead.encrypt(self._nonce(), plaintext, None)
-
-    def open(self, data: bytes) -> bytes:
-        return self.aead.decrypt(self._nonce(), data, None)
-
-
-def parse_ss_addr(buf: bytes):
-    """SOCKS5-like address at start of decrypted payload."""
-    if not buf:
-        raise ValueError("empty")
-    atyp = buf[0]
-    pos = 1
-    if atyp == 0x01:
-        address = socket.inet_ntop(socket.AF_INET, buf[pos : pos + 4])
-        pos += 4
-    elif atyp == 0x03:
-        n = buf[pos]
-        pos += 1
-        address = buf[pos : pos + n].decode("utf-8", "ignore")
-        pos += n
-    elif atyp == 0x04:
-        address = socket.inet_ntop(socket.AF_INET6, buf[pos : pos + 16])
-        pos += 16
-    else:
-        raise ValueError(f"atyp {atyp}")
-    port = int.from_bytes(buf[pos : pos + 2], "big")
-    pos += 2
-    return address, port, buf[pos:]
-
-
-class ChunkReader:
-    """Buffer WS frames and decrypt SS AEAD length-chunk stream."""
-
-    def __init__(self, dec: AeadCrypto):
-        self.dec = dec
-        self.buf = b""
-        self.need_len = True
-        self.next_len = 2 + TAG
-
-    def feed(self, data: bytes) -> list[bytes]:
-        self.buf += data
-        out = []
-        while True:
-            if len(self.buf) < self.next_len:
-                break
-            chunk = self.buf[: self.next_len]
-            self.buf = self.buf[self.next_len :]
-            try:
-                plain = self.dec.open(chunk)
-            except Exception as e:
-                raise ValueError(f"decrypt fail: {e}") from e
-            if self.need_len:
-                if len(plain) != 2:
-                    raise ValueError("bad len chunk")
-                ln = struct.unpack("!H", plain)[0]
-                if ln > 0x3FFF:
-                    raise ValueError("len too big")
-                self.next_len = ln + TAG
-                self.need_len = False
-            else:
-                out.append(plain)
-                self.next_len = 2 + TAG
-                self.need_len = True
+    def seal(self, data: bytes) -> bytes:
+        aead = make_aead(self.method, self.session_key, b"\x00" * NONCE_LEN)
+        out = b""
+        # length
+        ln = len(data)
+        len_bytes = struct.pack("!H", ln)
+        n1 = self._nonce()
+        out += aead.encrypt(n1, len_bytes, None)
+        n2 = self._nonce()
+        out += aead.encrypt(n2, data, None)
         return out
 
+    def open_chunk(self, data: bytes) -> tuple[bytes, bytes]:
+        """Decrypt one chunk from buffer; returns (plaintext, remaining)."""
+        aead = make_aead(self.method, self.session_key, b"\x00" * NONCE_LEN)
+        self._buf += data
+        # need 2+TAG for length
+        if len(self._buf) < 2 + TAG_LEN:
+            return b"", self._buf
+        n1 = self._nonce()
+        try:
+            len_plain = aead.decrypt(n1, self._buf[: 2 + TAG_LEN], None)
+        except Exception:
+            # reset nonce counter on failure path — caller should drop
+            raise
+        ln = struct.unpack("!H", len_plain)[0]
+        need = 2 + TAG_LEN + ln + TAG_LEN
+        if len(self._buf) < need:
+            # rewind nonce
+            self.nonce_counter -= 1
+            return b"", self._buf
+        chunk = self._buf[2 + TAG_LEN : need]
+        rest = self._buf[need:]
+        self._buf = b""
+        n2 = self._nonce()
+        plain = aead.decrypt(n2, chunk, None)
+        return plain, rest
 
-def pack_chunks(enc: AeadCrypto, data: bytes) -> bytes:
-    out = bytearray()
-    # max payload per chunk 0x3FFF
-    off = 0
-    while off < len(data):
-        part = data[off : off + 0x3FFF]
-        off += len(part)
-        out += enc.seal(struct.pack("!H", len(part)))
-        out += enc.seal(part)
-    return bytes(out)
+
+def parse_ss_addr(data: bytes):
+    if not data:
+        raise ValueError("empty")
+    atyp = data[0]
+    pos = 1
+    if atyp == 0x01:
+        address = socket.inet_ntop(socket.AF_INET, data[pos : pos + 4])
+        pos += 4
+    elif atyp == 0x03:
+        n = data[pos]
+        pos += 1
+        address = data[pos : pos + n].decode("utf-8", "ignore")
+        pos += n
+    elif atyp == 0x04:
+        address = socket.inet_ntop(socket.AF_INET6, data[pos : pos + 16])
+        pos += 16
+    else:
+        raise ValueError(f"bad atyp {atyp}")
+    port = int.from_bytes(data[pos : pos + 2], "big")
+    pos += 2
+    return address, port, data[pos:]
 
 
-async def handle_ss_ws(ws, uid, is_allowed, on_usage, register_conn, unregister_conn):
+async def handle_ss_ws(ws, link_id, is_allowed, on_usage, register_conn, unregister_conn, method="aes-256-gcm"):
+    """
+    Shadowsocks over WebSocket:
+    Client sends: salt(32) + AEAD(target header + payload)...
+    Compatible with clients that tunnel SS through WS (custom path).
+    """
     await ws.accept()
-    link = is_allowed(uid)
+    link = is_allowed(link_id)
     if not link:
         await ws.close(code=1008, reason="not authorized")
         return
 
-    method = link.get("ss_method") or DEFAULT_METHOD
-    if method not in METHODS:
-        method = DEFAULT_METHOD
-    password = uid  # password == link id
+    password = link.get("ss_password") or link_id
+    method = link.get("ss_method") or method
+    key = derive_key(password, method)
 
-    conn_id = register_conn(uid)
+    conn_id = register_conn(link_id)
     writer = None
     try:
-        key_len, salt_len, _ = METHODS[method]
-        buf = b""
-        # need salt first
-        while len(buf) < salt_len:
-            msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
-            if msg["type"] == "websocket.disconnect":
-                return
-            buf += msg.get("bytes") or (msg.get("text") or "").encode()
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=12.0)
+        if first_msg["type"] == "websocket.disconnect":
+            return
+        raw = first_msg.get("bytes") or b""
+        if len(raw) < 32:
+            await ws.close(code=1008, reason="short")
+            return
 
-        salt = buf[:salt_len]
-        buf = buf[salt_len:]
-        dec = AeadCrypto(method, password, is_enc=False, salt=salt)
-        enc = AeadCrypto(method, password, is_enc=True)
-        reader_ss = ChunkReader(dec)
+        salt = raw[:32]
+        rest = raw[32:]
+        # session key from salt + master key
+        session_key = hashlib.sha256(salt + key).digest()
+        dec = _SSStream(method, session_key, encrypt=False)
+        enc = _SSStream(method, session_key, encrypt=True)
+        # prepend salt to first response path not needed for server
 
-        gate = QuotaGate(uid, on_usage)
-        await gate.add(salt_len)
+        gate = QuotaGate(link_id, on_usage)
+        await gate.add(len(raw))
 
-        # decrypt until we have address header
-        payload_rest = b""
-        addr = port = None
-        if buf:
-            pieces = reader_ss.feed(buf)
-            collected = b"".join(pieces)
-            if collected:
-                try:
-                    addr, port, payload_rest = parse_ss_addr(collected)
-                except ValueError:
-                    payload_rest = collected
+        plain, leftover = dec.feed(rest)
+        if not plain:
+            # need more data
+            while not plain:
+                msg = await ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    return
+                chunk = msg.get("bytes") or b""
+                await gate.add(len(chunk))
+                plain, leftover = dec.feed(chunk)
 
-        while addr is None:
-            msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
-            if msg["type"] == "websocket.disconnect":
-                return
-            data = msg.get("bytes") or (msg.get("text") or "").encode()
-            if not data:
-                continue
-            await gate.add(len(data))
-            pieces = reader_ss.feed(data)
-            if not pieces:
-                continue
-            collected = (payload_rest + b"".join(pieces)) if payload_rest else b"".join(pieces)
-            payload_rest = b""
-            try:
-                addr, port, payload_rest = parse_ss_addr(collected)
-            except ValueError:
-                payload_rest = collected
-                if len(payload_rest) > 4096:
-                    raise
-
-        tcp_r, writer = await open_tcp(addr, port, timeout=10.0)
+        address, port, payload = parse_ss_addr(plain)
+        reader, writer = await open_tcp(address, port, timeout=8.0)
         tune_socket(writer)
-        # first response must include our salt
-        first_hdr = enc.salt
-        if payload_rest:
-            writer.write(payload_rest)
-            await writer.drain()
 
-        async def up():
-            nonlocal first_hdr
+        if payload:
+            writer.write(payload)
+            await writer.drain()
+            await gate.add(len(payload))
+        if leftover:
+            # more decrypted already in buffer handled by feed
+            pass
+
+        async def ws_to_tcp():
             try:
+                buf_plain = leftover
+                if buf_plain:
+                    writer.write(buf_plain)
+                    await writer.drain()
                 while True:
                     msg = await ws.receive()
                     if msg["type"] == "websocket.disconnect":
                         break
-                    data = msg.get("bytes") or (msg.get("text") or "").encode()
+                    data = msg.get("bytes") or b""
                     if not data:
                         continue
                     if not await gate.add(len(data)):
                         break
-                    for plain in reader_ss.feed(data):
-                        writer.write(plain)
-                    if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
-                        await writer.drain()
-            except Exception:
+                    p, _ = dec.feed(data)
+                    if p:
+                        writer.write(p)
+                        if writer.transport.get_write_buffer_size() > WRITE_HIGH_WATER:
+                            await writer.drain()
+            except (WebSocketDisconnect, Exception):
                 pass
             finally:
                 await gate.flush()
@@ -245,37 +217,40 @@ async def handle_ss_ws(ws, uid, is_allowed, on_usage, register_conn, unregister_
                 except Exception:
                     pass
 
-        async def down():
+        async def tcp_to_ws():
             try:
-                # send salt once at start of downlink
-                await ws.send_bytes(first_hdr)
+                # first response includes salt for client
+                first = True
                 while True:
-                    data = await tcp_r.read(RELAY_BUF)
+                    data = await reader.read(RELAY_BUF)
                     if not data:
                         break
                     if not await gate.add(len(data)):
                         break
-                    packed = pack_chunks(enc, data)
-                    await ws.send_bytes(packed)
+                    sealed = enc.seal(data)
+                    if first:
+                        await ws.send_bytes(salt + sealed)
+                        first = False
+                    else:
+                        await ws.send_bytes(sealed)
             except Exception:
                 pass
             finally:
                 await gate.flush()
 
-        done, pending = await asyncio.wait(
-            {asyncio.create_task(up()), asyncio.create_task(down())},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        t1 = asyncio.create_task(ws_to_tcp())
+        t2 = asyncio.create_task(tcp_to_ws())
+        done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
         for t in pending:
             t.cancel()
             try:
                 await t
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, Exception):
                 pass
     except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
     except Exception as e:
-        logger.debug("ss: %s", e)
+        logger.debug("ss error: %s", e)
     finally:
         if writer:
             try:
@@ -284,3 +259,60 @@ async def handle_ss_ws(ws, uid, is_allowed, on_usage, register_conn, unregister_
             except Exception:
                 pass
         unregister_conn(conn_id)
+
+
+class _SSStream:
+    def __init__(self, method: str, session_key: bytes, encrypt: bool):
+        self.method = method
+        self.key = session_key
+        self.encrypt = encrypt
+        self.nonce_c = 0
+        self._buf = b""
+
+    def _nonce(self):
+        n = self.nonce_c.to_bytes(12, "little")
+        self.nonce_c += 1
+        return n
+
+    def _aead(self):
+        if self.method.startswith("aes"):
+            return AESGCM(self.key)
+        return ChaCha20Poly1305(self.key)
+
+    def seal(self, data: bytes) -> bytes:
+        aead = self._aead()
+        out = aead.encrypt(self._nonce(), struct.pack("!H", len(data)), None)
+        out += aead.encrypt(self._nonce(), data, None)
+        return out
+
+    def feed(self, data: bytes) -> tuple[bytes, bytes]:
+        """Return (decrypted_payload_so_far, unconsumed). Accumulates full chunks."""
+        aead = self._aead()
+        self._buf += data
+        out = b""
+        while True:
+            if len(self._buf) < 2 + TAG_LEN:
+                break
+            # peek length without consuming nonce permanently on failure
+            saved = self.nonce_c
+            try:
+                n1 = self.nonce_c.to_bytes(12, "little")
+                len_p = aead.decrypt(n1, self._buf[: 2 + TAG_LEN], None)
+            except Exception:
+                self.nonce_c = saved
+                break
+            self.nonce_c = saved + 1
+            ln = struct.unpack("!H", len_p)[0]
+            need = 2 + TAG_LEN + ln + TAG_LEN
+            if len(self._buf) < need:
+                self.nonce_c = saved
+                break
+            body = self._buf[2 + TAG_LEN : need]
+            self._buf = self._buf[need:]
+            n2 = self.nonce_c.to_bytes(12, "little")
+            self.nonce_c += 1
+            try:
+                out += aead.decrypt(n2, body, None)
+            except Exception:
+                break
+        return out, self._buf
