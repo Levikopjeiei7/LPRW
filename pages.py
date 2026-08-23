@@ -766,6 +766,27 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 @media (min-width: 961px) {
   .mob-nav { display: none !important; }
 }
+
+/* LPRW 4.0 visual refresh */
+:root{--accent:#7c5cff;--accent2:#20c7a8}
+body{background:radial-gradient(1200px 600px at 80% -10%,rgba(124,92,255,.14),transparent 60%),radial-gradient(900px 500px at -10% 40%,rgba(32,199,168,.08),transparent 55%),var(--bg)}
+.side{backdrop-filter:blur(18px);background:linear-gradient(180deg,rgba(20,24,38,.96),rgba(12,15,26,.96));border-inline-end:1px solid rgba(255,255,255,.06)}
+.logo{padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:10px}
+.nav-item{transition:transform .18s ease,background .18s ease,color .18s ease;border:1px solid transparent}
+.nav-item:hover{transform:translateX(-2px);background:rgba(124,92,255,.08);border-color:rgba(124,92,255,.12)}
+.nav-item.active{background:linear-gradient(135deg,rgba(124,92,255,.20),rgba(32,199,168,.08));border-color:rgba(124,92,255,.20);box-shadow:0 8px 30px rgba(0,0,0,.12)}
+.kpi,.panel{border:1px solid rgba(255,255,255,.065);box-shadow:0 14px 40px rgba(0,0,0,.12);backdrop-filter:blur(10px)}
+.kpi{transition:transform .18s ease,box-shadow .18s ease}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 18px 45px rgba(0,0,0,.18)}
+.btn-p{background:linear-gradient(135deg,#7c5cff,#5f7cff);box-shadow:0 8px 24px rgba(124,92,255,.25)}
+.btn-p:hover{filter:brightness(1.08);transform:translateY(-1px)}
+table tbody tr{transition:background .15s ease}
+table tbody tr:hover{background:rgba(124,92,255,.055)}
+.modal{border:1px solid rgba(255,255,255,.08);box-shadow:0 30px 100px rgba(0,0,0,.42);backdrop-filter:blur(22px)}
+.field input,.field select{transition:border-color .15s ease,box-shadow .15s ease}
+.field input:focus,.field select:focus{border-color:rgba(124,92,255,.7);box-shadow:0 0 0 3px rgba(124,92,255,.12);outline:none}
+.badge.on{box-shadow:0 0 0 3px rgba(32,199,168,.07)}
+
 </style></head><body>
 <div id="login"><div class="login-card"><img class="brand-mark" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="64" height="64"><h1>LPRW Panel</h1><p class="sub">Leviko Panel Railway · ورود مدیر</p>
 <div class="field"><label>نام کاربری</label><input id="user" autocomplete="username" placeholder="admin"></div>
@@ -780,6 +801,8 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <div class="logo"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="42" height="42"><div><h2>LPRW</h2><small>Leviko Panel</small></div></div>
 <div class="nav-item active" data-tab="dash">داشبورد</div>
 <div class="nav-item" data-tab="links">لینک‌ها</div>
+<div class="nav-item" data-tab="subs">اشتراک‌ها</div>
+<div class="nav-item" data-tab="inbounds">پروتکل و اینباند</div>
 <div class="nav-item" data-tab="online">اتصالات زنده</div>
 <div class="nav-item" data-tab="logs">فعالیت‌ها</div>
 <div class="nav-item" data-tab="settings">تنظیمات</div>
@@ -806,6 +829,11 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 </section>
 <section id="tab-links" class="hidden"><div class="panel"><div class="panel-h"><h3>مدیریت لینک‌ها</h3><span class="chip" id="links-count">0</span></div>
 <div style="overflow:auto"><table><thead><tr><th>نام</th><th>پروتکل</th><th>مصرف</th><th>حجم</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="links-tb"></tbody></table></div></div></section>
+<section id="tab-subs" class="hidden"><div class="panel"><div class="panel-h"><h3>اشتراک‌ها</h3><button class="btn btn-p" id="btn-ns">+ اشتراک جدید</button></div>
+<div style="overflow:auto"><table><thead><tr><th>نام</th><th>لینک‌ها</th><th>مصرف</th><th>حجم</th><th>انقضا</th><th>لینک اشتراک</th><th>عملیات</th></tr></thead><tbody id="subs-tb"></tbody></table></div></div></section>
+<section id="tab-inbounds" class="hidden"><div class="panel"><div class="panel-h"><h3>پروتکل و اینباند</h3><button class="btn btn-p" id="btn-ni">+ اینباند جدید</button></div>
+<div style="overflow:auto"><table><thead><tr><th>نام</th><th>پروتکل</th><th>شبکه</th><th>امنیت</th><th>پورت</th><th>کاربر</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="inbounds-tb"></tbody></table></div>
+<div class="hint" style="margin-top:12px">VLESS/Trojan از WS، XHTTP و HTTPUpgrade پشتیبانی می‌کنند. Shadowsocks به‌صورت native با TCP/UDP کار می‌کند؛ برای SS لینک استاندارد و سازگار تولید می‌شود.</div></div></section>
 <section id="tab-online" class="hidden"><div class="panel"><div class="panel-h"><h3>اتصالات زنده</h3></div><div id="online-grid"></div></div></section>
 <section id="tab-logs" class="hidden"><div class="panel"><div class="panel-h"><h3>لاگ فعالیت</h3></div><ul id="act-list"></ul></div></section>
 <section id="tab-settings" class="hidden"><div class="panel"><div class="panel-h"><h3>تنظیمات</h3></div>
@@ -820,26 +848,48 @@ code{font-family:ui-monospace,monospace;font-size:.78rem;color:var(--pr3)}
 <button class="btn" id="btn-pw">بروزرسانی رمز</button>
 </div></section>
 </main></div></div>
-<div class="modal-bg" id="m-link"><div class="modal"><h3>لینک جدید</h3>
+<div class="modal-bg" id="m-sub"><div class="modal"><h3>اشتراک جدید</h3>
+<div class="field"><label>نام اشتراک</label><input id="ns-n" placeholder="اشتراک اصلی"></div>
+<div class="field"><label>کاربرها</label><select id="ns-links" multiple style="min-height:150px"></select></div>
+<div class="form-row"><div class="field"><label>حجم (GB) ۰=نامحدود</label><input id="ns-v" type="number" min="0" value="0" step="0.1"></div>
+<div class="field"><label>روز ۰=نامحدود</label><input id="ns-d" type="number" min="0" value="0"></div></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-sub')">لغو</button><button class="btn btn-p" id="btn-cs">ساخت اشتراک</button></div>
+</div></div>
+<div class="modal-bg" id="m-inbound"><div class="modal"><h3>اینباند جدید</h3>
+<div class="field"><label>نام اینباند</label><input id="ni-n" placeholder="VLESS XHTTP"></div>
+<div class="form-row"><div class="field"><label>پروتکل</label><select id="ni-p"><option value="vless">VLESS</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select></div>
+<div class="field"><label>نتورک</label><select id="ni-net"><option value="ws">WS</option><option value="xhttp">XHTTP</option><option value="httpupgrade">HTTPUpgrade</option></select></div></div>
+<div class="form-row"><div class="field"><label>امنیت</label><select id="ni-sec"><option value="tls">TLS</option><option value="none">بدون TLS</option></select></div>
+<div class="field"><label>پورت (خالی = خودکار)</label><input id="ni-port" type="number" min="1024" max="65535" placeholder="20000"></div></div>
+<div class="form-row"><div class="field"><label>Path</label><input id="ni-path" placeholder="/lprw/your-path"></div>
+<div class="field"><label>XHTTP Mode</label><select id="ni-mode"><option value="auto">auto</option><option value="packet-up">packet-up</option><option value="stream-up">stream-up</option></select></div></div>
+<div class="field"><label>یادداشت</label><input id="ni-r"></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-inbound')">لغو</button><button class="btn btn-p" id="btn-ci">ساخت اینباند</button></div>
+</div></div>
+<div class="modal-bg" id="m-link"><div class="modal"><h3>لینک / کاربر جدید</h3>
+<div class="field"><label>اینباند</label><select id="nl-i"></select></div>
 <div class="field"><label>نام</label><input id="nl-n" placeholder="کاربر ۱"></div>
-<div class="form-row"><div class="field"><label>پروتکل</label><select id="nl-p"><option value="vless">VLESS</option><option value="trojan">Trojan</option></select></div>
-<div class="field"><label>حجم (GB) ۰=نامحدود</label><input id="nl-v" type="number" value="0" min="0" step="0.1"></div></div>
-<div class="form-row"><div class="field"><label>روز ۰=نامحدود</label><input id="nl-d" type="number" value="0" min="0"></div>
-<div class="field"><label>سقف اتصال همزمان</label><input id="nl-c" type="number" value="0" min="0"></div></div>
-<div class="field"><label>یادداشت</label><input id="nl-r"></div>
+<div class="form-row"><div class="field"><label>حجم (GB) ۰=نامحدود</label><input id="nl-v" type="number" value="0" min="0" step="0.1"></div>
+<div class="field"><label>روز ۰=نامحدود</label><input id="nl-d" type="number" value="0" min="0"></div></div>
+<div class="form-row"><div class="field"><label>سقف اتصال همزمان</label><input id="nl-c" type="number" value="0" min="0"></div>
+<div class="field"><label>یادداشت</label><input id="nl-r"></div></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" onclick="closeM('m-link')">لغو</button><button class="btn btn-p" id="btn-cl">ساخت</button></div>
 </div></div>
 
 <div class="mob-nav" id="mob-nav">
   <button type="button" data-tab="dash" class="active">خانه</button>
   <button type="button" data-tab="links">لینک</button>
-    <button type="button" data-tab="online">آنلاین</button>
+  <button type="button" data-tab="subs">ساب</button>
+  <button type="button" data-tab="inbounds">اینباند</button>
+  <button type="button" data-tab="online">آنلاین</button>
   <button type="button" data-tab="settings">تنظیمات</button>
 </div>
 
 <div class="bottom-nav" id="bottom-nav">
 <button type="button" data-tab="dash" class="active"><span>🏠</span>خانه</button>
 <button type="button" data-tab="links"><span>🔗</span>لینک</button>
+<button type="button" data-tab="subs"><span>📡</span>ساب</button>
+<button type="button" data-tab="inbounds"><span>🧩</span>اینباند</button>
 <button type="button" data-tab="online"><span>🟢</span>آنلاین</button>
 <button type="button" data-tab="settings"><span>⚙️</span>تنظیمات</button>
 </div>
@@ -859,10 +909,10 @@ $('#btn-theme').onclick=()=>{const cur=document.documentElement.getAttribute('da
 function goTab(tab){
   $$('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
   $$('#bottom-nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===tab));
-  ['dash','links','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});
-  const titles={dash:'داشبورد',links:'لینک‌ها',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};
+  ['dash','links','subs','inbounds','online','logs','settings'].forEach(t=>{const el=$('#tab-'+t);if(el)el.classList.toggle('hidden',t!==tab)});
+  const titles={dash:'داشبورد',links:'لینک‌ها',subs:'اشتراک‌ها',inbounds:'پروتکل و اینباند',online:'اتصالات زنده',logs:'فعالیت‌ها',settings:'تنظیمات'};
   $('#page-title').textContent=titles[tab]||'';
-  if(tab==='links')loadLinks();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();
+  if(tab==='links'){loadInbounds();loadLinks()}if(tab==='subs'){loadSubs();}if(tab==='inbounds')loadInbounds();if(tab==='online')loadOnline();if(tab==='logs')loadAct();if(tab==='settings')loadSettings();
   $('#side')?.classList.remove('open');$('#backdrop')?.classList.remove('show');
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -875,14 +925,98 @@ $('#pw').onkeydown=e=>{if(e.key==='Enter')$('#btn-login').click()};
 $('#user').onkeydown=e=>{if(e.key==='Enter')$('#pw').focus()};
 $('#btn-out').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin()};
 async function loadDash(){try{const s=await api('/api/stats');$('#k-links').textContent=s.links??0;$('#k-online').textContent=s.online??0;$('#k-bytes').textContent=s.bytes_h||s.bytes||'—';$('#k-req2').textContent=s.reqs??0;$('#k-up').textContent=s.uptime_h||(s.uptime+'s');$('#k-host').textContent=s.host||location.host;$('#k-req').textContent=s.reqs??0;const labels=Object.keys(s.hourly||{});const data=Object.values(s.hourly||{});const ctx=$('#chart');if(chart)chart.destroy();chart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'ترافیک',data,borderColor:'#818cf8',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8b93a8'}},y:{ticks:{color:'#8b93a8'}}},maintainAspectRatio:false}})}catch(e){}}
-async function loadLinks(){const links=await api('/api/links');$('#links-count').textContent=links.length;$('#links-tb').innerHTML=links.map(l=>`<tr><td><strong>${esc(l.label)}</strong><div style="font-size:.7rem;color:var(--mu)">${esc(l.id).slice(0,8)}…</div></td><td>${esc((l.proto||'vless').toUpperCase())}</td><td>${esc(l.used_h)}</td><td>${esc(l.vol_h)}</td><td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span></td><td style="white-space:nowrap"><button class="chip" data-copy="${esc(l.share)}">کپی</button> <button class="chip" data-sub="${esc(l.sub_url)}">ساب</button> <button class="chip" data-user="${esc(l.user_url)}">پنل کاربر</button> <button class="chip" data-rst="${esc(l.id)}">ریست</button> <button class="btn btn-d btn-sm" data-del="${esc(l.id)}">حذف</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">لینکی نیست</div></td></tr>';$('#links-tb').onclick=async e=>{const t=e.target.closest('[data-copy],[data-sub],[data-user],[data-rst],[data-del]');if(!t)return;if(t.dataset.copy)copy(t.dataset.copy);if(t.dataset.sub)copy(t.dataset.sub);if(t.dataset.user){copy(t.dataset.user);window.open(t.dataset.user,'_blank')}if(t.dataset.rst){await api('/api/links/'+t.dataset.rst,{method:'PATCH',body:{reset_usage:true}});toast('ریست شد');loadLinks()}if(t.dataset.del&&confirm('حذف شود؟')){await api('/api/links/'+t.dataset.del,{method:'DELETE'});loadLinks();loadDash()}}}
+async function loadSubs(){
+  try{
+    const rows=await api('/api/subs');
+    $('#subs-tb').innerHTML=rows.map(x=>`<tr>
+      <td><strong>${esc(x.name)}</strong><div style="font-size:.7rem;color:var(--mu)">${esc(x.id).slice(0,8)}…</div></td>
+      <td>${esc((x.link_ids||[]).length)}</td><td>${esc(x.used_h||'0 B')}</td><td>${esc(x.vol_h||'نامحدود')}</td>
+      <td>${esc((x.exp||'نامحدود').replace('T',' ').slice(0,19))}</td>
+      <td><button class="chip" data-scopy="${esc(x.url)}">کپی</button></td>
+      <td><button class="btn btn-d btn-sm" data-sdel="${esc(x.id)}">حذف</button></td></tr>`).join('') ||
+      '<tr><td colspan="7"><div class="empty">اشتراکی نیست</div></td></tr>';
+    $('#subs-tb').onclick=async e=>{
+      const c=e.target.closest('[data-scopy]'); if(c) copy(c.dataset.scopy);
+      const d=e.target.closest('[data-sdel]'); if(d&&confirm('اشتراک حذف شود؟')){await api('/api/subs/'+d.dataset.sdel,{method:'DELETE'});loadSubs()}
+    };
+  }catch(e){toast(e.message||'خطا')}
+}
+async function loadInbounds(){
+  try{
+    const rows=await api('/api/inbounds');
+    const tb=$('#inbounds-tb');
+    tb.innerHTML=rows.map(i=>`<tr>
+      <td><strong>${esc(i.name)}</strong><div style="font-size:.7rem;color:var(--mu)">${esc(i.id).slice(0,8)}…</div></td>
+      <td>${esc(i.proto.toUpperCase())}</td><td>${esc(i.network.toUpperCase())}</td>
+      <td>${esc(i.security.toUpperCase())}</td><td>${esc(i.port)}</td>
+      <td>${esc(i.active_clients||0)} / ${esc(i.clients_count||0)}</td>
+      <td><span class="badge ${i.active?'on':'off'}">${i.active?'فعال':'خاموش'}</span></td>
+      <td><button class="chip" data-i-del="${esc(i.id)}">حذف</button></td></tr>`).join('') ||
+      '<tr><td colspan="8"><div class="empty">اینباندی ساخته نشده</div></td></tr>';
+    tb.onclick=async e=>{const b=e.target.closest('[data-i-del]');if(!b)return;
+      if(confirm('اینباند حذف شود؟')){try{await api('/api/inbounds/'+b.dataset.iDel,{method:'DELETE'});toast('حذف شد');loadInbounds();loadLinks();loadDash()}catch(err){toast(err.message)}}};
+  }catch(e){toast(e.message||'خطا در دریافت اینباندها')}
+}
+async function loadLinks(){
+  const links=await api('/api/links');
+  $('#links-count').textContent=links.length;
+  $('#links-tb').innerHTML=links.map(l=>`<tr>
+    <td><strong>${esc(l.label)}</strong><div style="font-size:.7rem;color:var(--mu)">${esc(l.id).slice(0,8)}…</div></td>
+    <td>${esc((l.proto||'vless').toUpperCase())}<div style="font-size:.7rem;color:var(--mu)">${esc(l.inbound_name||'')}</div></td>
+    <td>${esc((l.network||'ws').toUpperCase())} / ${esc((l.security||'none').toUpperCase())}</td>
+    <td>${esc(l.used_h)}</td><td>${esc(l.vol_h)}</td>
+    <td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span></td>
+    <td style="white-space:nowrap"><button class="chip" data-copy="${esc(l.share)}">کپی</button>
+    <button class="chip" data-sub="${esc(l.sub_url)}">ساب</button><button class="chip" data-user="${esc(l.user_url)}">پنل کاربر</button>
+    <button class="chip" data-rst="${esc(l.id)}">ریست</button><button class="btn btn-d btn-sm" data-del="${esc(l.id)}">حذف</button></td></tr>`).join('') ||
+    '<tr><td colspan="7"><div class="empty">لینکی نیست</div></td></tr>';
+  $('#links-tb').onclick=async e=>{const t=e.target.closest('[data-copy],[data-sub],[data-user],[data-rst],[data-del]');if(!t)return;
+    if(t.dataset.copy)copy(t.dataset.copy);if(t.dataset.sub)copy(t.dataset.sub);
+    if(t.dataset.user){copy(t.dataset.user);window.open(t.dataset.user,'_blank')}
+    if(t.dataset.rst){await api('/api/links/'+t.dataset.rst,{method:'PATCH',body:{reset_usage:true}});toast('ریست شد');loadLinks()}
+    if(t.dataset.del&&confirm('حذف شود؟')){await api('/api/links/'+t.dataset.del,{method:'DELETE'});loadLinks();loadDash()}
+  }
+}
 async function loadOnline(){const s=await api('/api/stats');const list=s.connections||[];$('#online-grid').innerHTML=list.length?list.map(c=>`<div class="conn-card"><div class="t">ID</div><div class="v">${esc(c.id)}</div><div class="t" style="margin-top:8px">UUID</div><div class="v">${esc(c.uuid)}</div><div class="t" style="margin-top:8px">مدت</div><div class="v">${esc(c.sec)} ث</div></div>`).join(''):'<div class="empty" style="grid-column:1/-1">اتصال فعالی نیست</div>'}
 async function loadAct(){const list=await api('/api/activity');$('#act-list').innerHTML=list.map(a=>{const lv=a.level==='ok'?'ok':a.level==='warn'?'warn':'info';return `<li><span class="tm">${esc((a.t||'').slice(11,19))}</span><span class="dot dot-${lv}"></span><span>${esc(a.msg)}</span></li>`}).join('')||'<li style="color:var(--mu);padding:24px">خالی</li>'}
 async function loadSettings(){try{const s=await api('/api/settings');$('#st-name').value=s.panel_name||'';$('#st-ann').value=s.announce||'';$('#st-sup').value=s.support_url||''}catch{}}
 $('#btn-save-st').onclick=async()=>{await api('/api/settings',{method:'POST',body:{panel_name:$('#st-name').value,announce:$('#st-ann').value,support_url:$('#st-sup').value}});toast('ذخیره شد')};
 $('#btn-pw').onclick=async()=>{try{await api('/api/password',{method:'POST',body:{current:$('#pw-cur').value,new_password:$('#pw-new').value}});toast('رمز عوض شد')}catch(e){toast(e.message||'خطا')}};
-$('#btn-nl').onclick=()=>openM('m-link');
-$('#btn-cl').onclick=async()=>{try{const r=await api('/api/links',{method:'POST',body:{label:$('#nl-n').value.trim()||'Link',proto:$('#nl-p').value,volume_gb:+$('#nl-v').value||0,days:+$('#nl-d').value||0,max_conn:+$('#nl-c').value||0,remark:$('#nl-r').value||''}});closeM('m-link');toast('ساخته شد');if(r.link?.share)copy(r.link.share);loadLinks();loadDash()}catch(e){toast(e.message)}};
+$('#btn-ns').onclick=async()=>{
+  const links=await api('/api/links');
+  $('#ns-links').innerHTML=links.map(l=>`<option value="${esc(l.id)}">${esc(l.label)} — ${esc((l.proto||'').toUpperCase())}/${esc((l.network||'WS').toUpperCase())}</option>`).join('');
+  openM('m-sub');
+};
+$('#btn-cs').onclick=async()=>{
+  try{
+    const ids=[...$('#ns-links').selectedOptions].map(o=>o.value);
+    const r=await api('/api/subs',{method:'POST',body:{name:$('#ns-n').value.trim()||'Subscription',link_ids:ids,volume_gb:+$('#ns-v').value||0,days:+$('#ns-d').value||0}});
+    closeM('m-sub');toast('اشتراک ساخته شد');if(r.url)copy(r.url);loadSubs();
+  }catch(e){toast(e.message||'خطا')}
+};
+$('#btn-nl').onclick=async()=>{
+  const rows=await api('/api/inbounds');
+  $('#nl-i').innerHTML=rows.map(i=>`<option value="${esc(i.id)}">${esc(i.name)} — ${esc(i.proto.toUpperCase())}/${esc(i.network.toUpperCase())}/${esc(i.security.toUpperCase())}:${esc(i.port)}</option>`).join('');
+  if(!rows.length){toast('اول یک اینباند بساز');goTab('inbounds');return}
+  openM('m-link');
+};
+$('#btn-ni').onclick=()=>openM('m-inbound');
+$('#btn-ci').onclick=async()=>{
+  try{
+    const body={name:$('#ni-n').value.trim()||'Inbound',proto:$('#ni-p').value,network:$('#ni-net').value,security:$('#ni-sec').value,
+      port:+$('#ni-port').value||null,path:$('#ni-path').value.trim(),xhttp_mode:$('#ni-mode').value,remark:$('#ni-r').value||''};
+    if(body.proto==='ss') body.security='none';
+    const r=await api('/api/inbounds',{method:'POST',body});closeM('m-inbound');toast('اینباند ساخته شد');loadInbounds();loadDash();
+  }catch(e){toast(e.message||'خطا')}
+};
+$('#btn-cl').onclick=async()=>{
+  try{
+    const r=await api('/api/links',{method:'POST',body:{inbound_id:$('#nl-i').value,label:$('#nl-n').value.trim()||'Link',
+      volume_gb:+$('#nl-v').value||0,days:+$('#nl-d').value||0,max_conn:+$('#nl-c').value||0,remark:$('#nl-r').value||''}});
+    closeM('m-link');toast('کاربر ساخته شد');if(r.link?.share)copy(r.link.share);loadLinks();loadInbounds();loadDash()
+  }catch(e){toast(e.message||'خطا')}
+};
+
 async function loadAll(){await loadDash();try{await api('/api/me')}catch{showLogin();return}}
 (async()=>{try{await api('/api/me');showApp()}catch{showLogin()}})();
 

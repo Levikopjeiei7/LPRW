@@ -1,8 +1,6 @@
 """
-LPRW — Leviko Panel Railway v4.0
-Multi-protocol gateway with Inbound management, SS, optimized relays.
-Networks: ws / httpupgrade / xhttp (link generation + WS backend)
-Protocols: vless / trojan / ss
+LPRW — Leviko Panel Railway v3.0
+Original multi-protocol gateway for Railway.
 """
 from __future__ import annotations
 
@@ -31,7 +29,7 @@ from pydantic import BaseModel, Field
 
 from protocol.vless import handle_vless_ws
 from protocol.trojan import handle_trojan_ws
-from protocol.ss import handle_ss_ws
+from xray_manager import XrayManager, SUPPORTED_PROTOCOLS, SUPPORTED_NETWORKS, SUPPORTED_SECURITY
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
@@ -65,6 +63,7 @@ ADMIN_PW = os.environ.get("ADMIN_PASSWORD", "12345")
 PORT = int(os.environ.get("PORT", 8000))
 
 def host(request: Optional[Request] = None) -> str:
+    """Resolve public panel host. Prefer env / learned host / request headers. Never stick on localhost."""
     candidates = []
     for key in ("RAILWAY_PUBLIC_DOMAIN", "RAILWAY_STATIC_URL", "PUBLIC_HOST", "HOST", "DOMAIN"):
         v = (os.environ.get(key) or "").strip()
@@ -101,6 +100,7 @@ def host(request: Optional[Request] = None) -> str:
 
 
 def status_line(link: dict, h: str) -> str:
+    """Display-only config: remaining volume + days in the remark (fragment)."""
     used = int(link.get("used", 0) or 0)
     vol = int(link.get("vol", 0) or 0)
     if vol <= 0:
@@ -119,6 +119,7 @@ def status_line(link: dict, h: str) -> str:
     vol_h = "نامحدود" if vol <= 0 else bh(vol)
     label = link.get("label") or "LPRW"
     remark = quote(f"📊 {label} | باقیمانده {left_h} از {vol_h} | {days}")
+    # Non-routable display entry (clients show name; connection is not used)
     return (
         f"vless://00000000-0000-0000-0000-000000000001@127.0.0.1:80"
         f"?encryption=none&security=none&type=tcp&headerType=none#{remark}"
@@ -141,8 +142,9 @@ _admin = hp(ADMIN_PW)
 LINKS: dict = {}
 SUBS: dict = {}
 INBOUNDS: dict = {}
+XRAY = XrayManager()
 SESS: dict = {}
-CONNECTIONS: dict = {}
+CONNECTIONS: dict = {}  # conn_id -> info
 STATS = {"bytes": 0, "reqs": 0, "errors": 0, "start": time.time()}
 ACT: deque = deque(maxlen=500)
 HOURLY: dict = defaultdict(int)
@@ -150,11 +152,15 @@ SETTINGS = {
     "panel_name": os.environ.get("PANEL_NAME", "LPRW"),
     "announce": "",
     "support_url": "",
+    "xray_enabled": True,
+    "xray_version": os.environ.get("XRAY_VERSION", "26.7.28"),
+    "inbound_port_start": int(os.environ.get("INBOUND_PORT_START", "20000")),
+    "tls_cert": os.environ.get("XRAY_TLS_CERT", ""),
+    "tls_key": os.environ.get("XRAY_TLS_KEY", ""),
 }
 LLOCK = asyncio.Lock()
 SLOCK = asyncio.Lock()
 XLOCK = asyncio.Lock()
-ILOCK = asyncio.Lock()
 SAVE_LOCK = asyncio.Lock()
 _pending = False
 
@@ -180,8 +186,6 @@ async def load():
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         if not DATA_FILE.exists():
-            # seed default inbound
-            await _ensure_default_inbound()
             return
         async with aiofiles.open(DATA_FILE) as f:
             d = json.loads(await f.read())
@@ -194,47 +198,17 @@ async def load():
             SETTINGS.update(d["settings"])
         STATS["bytes"] = d.get("bytes", 0)
         STATS["reqs"] = d.get("reqs", 0)
-        if not INBOUNDS:
-            await _ensure_default_inbound()
-        log.info("loaded %s links %s subs %s inbounds", len(LINKS), len(SUBS), len(INBOUNDS))
+        log.info("loaded %s links %s subs", len(LINKS), len(SUBS))
     except Exception as e:
         log.warning("load %s", e)
-        await _ensure_default_inbound()
-
-async def _ensure_default_inbound():
-    if INBOUNDS:
-        return
-    iid = "default-vless-ws"
-    INBOUNDS[iid] = {
-        "id": iid,
-        "name": "VLESS-WS-TLS",
-        "proto": "vless",
-        "network": "ws",
-        "security": "tls",
-        "path": "/ws",
-        "active": True,
-        "created": now().isoformat(),
-    }
-    iid2 = "default-trojan-ws"
-    INBOUNDS[iid2] = {
-        "id": iid2,
-        "name": "Trojan-WS-TLS",
-        "proto": "trojan",
-        "network": "ws",
-        "security": "tls",
-        "path": "/trojan-ws",
-        "active": True,
-        "created": now().isoformat(),
-    }
 
 async def save():
     async with SAVE_LOCK:
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             d = {
-                "links": dict(LINKS), "subs": dict(SUBS), "inbounds": dict(INBOUNDS),
-                "ah": _admin, "settings": SETTINGS,
-                "bytes": STATS["bytes"], "reqs": STATS["reqs"],
+                "links": dict(LINKS), "subs": dict(SUBS), "inbounds": dict(INBOUNDS), "ah": _admin,
+                "settings": SETTINGS, "bytes": STATS["bytes"], "reqs": STATS["reqs"],
             }
             tmp = DATA_FILE.with_suffix(".tmp")
             async with aiofiles.open(tmp, "w") as f:
@@ -275,92 +249,42 @@ async def auth(req: Request):
         raise HTTPException(401, "unauthorized")
     return True
 
-def _path_for(inbound: dict, uid: str) -> str:
-    net = inbound.get("network", "ws")
-    proto = inbound.get("proto", "vless")
-    base = inbound.get("path") or ""
-    if proto == "trojan":
-        if net == "ws":
-            return f"/trojan-ws/{uid}"
-        if net == "httpupgrade":
-            return f"/trojan-hu/{uid}"
-        if net == "xhttp":
-            return f"/trojan-xhttp/{uid}"
-        return f"/trojan-ws/{uid}"
-    if proto == "ss":
-        return f"/ss-ws/{uid}"
-    # vless
-    if net == "ws":
-        return f"/ws/{uid}"
-    if net == "httpupgrade":
-        return f"/hu/{uid}"
-    if net == "xhttp":
-        return f"/xhttp/{uid}"
-    return f"/ws/{uid}"
-
 def share(link: dict, h: Optional[str] = None) -> str:
-    """Generate client share link according to inbound settings."""
+    """Generate a standard client URI from the selected inbound."""
     h = h or host()
     lab = quote(link.get("label") or "LPRW")
-    uid = link["id"]
-    inbound_id = link.get("inbound_id")
-    inbound = INBOUNDS.get(inbound_id) if inbound_id else None
+    proto = link.get("proto", "vless")
+    inbound = INBOUNDS.get(link.get("inbound_id", ""))
     if not inbound:
-        # fallback from legacy proto field
-        proto = link.get("proto", "vless")
-        network = "ws"
-        security = "tls"
-    else:
-        proto = inbound.get("proto", "vless")
-        network = inbound.get("network", "ws")
-        security = inbound.get("security", "tls")
-
-    path = _path_for(inbound or {"proto": proto, "network": network, "path": ""}, uid)
-
-    # map network name for client
-    type_map = {"ws": "ws", "httpupgrade": "httpupgrade", "xhttp": "xhttp"}
-    net_type = type_map.get(network, "ws")
-
+        # legacy links still receive a sane WS/TLS URL
+        inbound = {"proto": proto, "network": "ws", "security": "tls",
+                   "port": 443, "path": f"/lprw/{link['id']}"}
+    port = int(inbound.get("port", 443))
+    network = inbound.get("network", "ws")
+    security = inbound.get("security", "none")
+    path = inbound.get("path") or f"/lprw/{inbound.get('id', link['id'])}"
     if proto == "ss":
-        # ss://method:password@host:port?params#remark
-        method = "aes-256-gcm"
-        password = link.get("ss_password") or uid
-        userinfo = base64.urlsafe_b64encode(f"{method}:{password}".encode()).decode().rstrip("=")
-        q = f"type={net_type}&path={quote(path)}&host={h}&security={security}&sni={h}&fp=chrome"
-        if security == "tls":
-            q += "&alpn=h2"
-        return f"ss://{userinfo}@{h}:443?{q}#{lab}"
-
-    if proto == "trojan":
-        params = {
-            "security": security if security != "none" else "none",
-            "type": net_type,
-            "host": h,
-            "path": path,
-            "sni": h,
-            "fp": "chrome",
-        }
-        if security == "tls":
-            params["alpn"] = "h2"
-        q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
-        return f"trojan://{uid}@{h}:443?{q}#{lab}"
-
-    # vless
+        import base64 as _b64
+        method = inbound.get("ss_method", "aes-128-gcm")
+        user = _b64.urlsafe_b64encode(f"{method}:{link['id']}".encode()).decode().rstrip("=")
+        return f"ss://{user}@{h}:{port}?type=tcp#{lab}"
     params = {
-        "encryption": "none",
-        "security": security if security != "none" else "none",
-        "type": net_type,
+        "encryption": "none" if proto == "vless" else None,
+        "security": security,
+        "type": network,
         "host": h,
         "path": path,
-        "sni": h,
-        "fp": "chrome",
+        "sni": h if security == "tls" else None,
+        "fp": "chrome" if security == "tls" else None,
     }
-    if security == "tls":
-        params["alpn"] = "h2"
-    if net_type == "xhttp":
-        params["mode"] = "auto"
-    q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
-    return f"vless://{uid}@{h}:443?{q}#{lab}"
+    if network == "xhttp":
+        params["mode"] = inbound.get("xhttp_mode", "auto")
+    q = "&".join(
+        f"{k}={quote(str(v), safe='')}"
+        for k, v in params.items() if v is not None
+    )
+    scheme = "vless" if proto == "vless" else "trojan"
+    return f"{scheme}://{link['id']}@{h}:{port}?{q}#{lab}"
 
 def enrich(l: dict, h: str) -> dict:
     o = dict(l)
@@ -371,18 +295,14 @@ def enrich(l: dict, h: str) -> dict:
     o["ok"] = allowed(l)
     o["share"] = share(l, h)
     o["online"] = sum(1 for c in CONNECTIONS.values() if c.get("uuid") == l["id"])
+    ib = INBOUNDS.get(l.get("inbound_id", "")) or {}
+    o["inbound_name"] = ib.get("name", "Legacy")
+    o["network"] = ib.get("network", "ws")
+    o["security"] = ib.get("security", "tls")
+    o["port"] = ib.get("port", 443)
     o["user_url"] = f"https://{h}/u/{l['id']}"
     o["qr_url"] = f"https://{h}/qr/{l['id']}"
     o["sub_url"] = f"https://{h}/sub/{l['id']}"
-    iid = l.get("inbound_id")
-    if iid and iid in INBOUNDS:
-        o["inbound_name"] = INBOUNDS[iid].get("name", iid)
-        o["proto"] = INBOUNDS[iid].get("proto", l.get("proto", "vless"))
-        o["network"] = INBOUNDS[iid].get("network", "ws")
-    else:
-        o["inbound_name"] = "—"
-        o["proto"] = l.get("proto", "vless")
-        o["network"] = "ws"
     return o
 
 def find_link(uid: str) -> Optional[dict]:
@@ -395,6 +315,7 @@ def find_link(uid: str) -> Optional[dict]:
     return None
 
 def on_usage(uid: str, n: int) -> bool:
+    """SYNC lock-free traffic account. Safe under asyncio single-thread."""
     STATS["bytes"] += n
     STATS["reqs"] += 1
     HOURLY[time.strftime("%H:00")] += n
@@ -415,6 +336,7 @@ def on_usage(uid: str, n: int) -> bool:
         return False
     return True
 
+
 def reg_conn(uid: str) -> str:
     cid = secrets.token_urlsafe(6)
     CONNECTIONS[cid] = {"uuid": uid, "at": time.time(), "bytes": 0}
@@ -423,30 +345,103 @@ def reg_conn(uid: str) -> str:
 def unreg_conn(cid: str):
     CONNECTIONS.pop(cid, None)
 
-# ── models ──
+
+
+def migrate_legacy():
+    changed = False
+    for lid, link in list(LINKS.items()):
+        if link.get("inbound_id") in INBOUNDS:
+            continue
+        proto = link.get("proto", "vless")
+        if proto not in SUPPORTED_PROTOCOLS:
+            proto = "vless"
+            link["proto"] = proto
+        iid = str(uuidlib.uuid4())
+        ib = {
+            "id": iid, "name": f"Legacy {proto.upper()}",
+            "proto": proto, "network": "ws", "security": "tls" if proto != "ss" else "none",
+            "port": _next_inbound_port(), "path": f"/lprw/{iid}",
+            "xhttp_mode": "auto", "ss_method": "aes-128-gcm",
+            "active": True, "remark": "migrated from LPRW 3.x",
+            "clients": [{"id": lid, "label": link.get("label", lid[:8]), "active": link.get("active", True)}],
+            "created": link.get("created", now().isoformat()),
+        }
+        INBOUNDS[iid] = ib
+        link["inbound_id"] = iid
+        changed = True
+    return changed
+
+def _next_inbound_port() -> int:
+    used = {int(x.get("port", 0)) for x in INBOUNDS.values()}
+    start = int(SETTINGS.get("inbound_port_start", 20000) or 20000)
+    port = max(1024, start)
+    while port in used:
+        port += 1
+    return port
+
+def _validate_inbound(proto: str, network: str, security: str):
+    if proto not in SUPPORTED_PROTOCOLS:
+        raise HTTPException(422, "protocol must be vless, trojan or ss")
+    if network not in SUPPORTED_NETWORKS:
+        raise HTTPException(422, "network must be ws, xhttp or httpupgrade")
+    if security not in SUPPORTED_SECURITY:
+        raise HTTPException(422, "security must be none or tls")
+    if proto == "ss" and security == "tls":
+        raise HTTPException(422, "native Shadowsocks does not use TLS; use VLESS/Trojan for TLS")
+
+def _inbound_view(i: dict, h: str) -> dict:
+    o = dict(i)
+    o["clients_count"] = len(i.get("clients", []))
+    o["active_clients"] = sum(1 for c in i.get("clients", []) if c.get("active", True))
+    o["url_base"] = f"{'https' if i.get('security') == 'tls' else 'http'}://{h}:{i.get('port')}"
+    return o
+
+async def rebuild_xray():
+    if not SETTINGS.get("xray_enabled", True):
+        return
+    try:
+        await XRAY.apply(list(INBOUNDS.values()), host())
+        act(f"Xray applied: {len(INBOUNDS)} inbounds", "ok")
+    except Exception as e:
+        STATS["errors"] += 1
+        log.warning("xray apply failed: %s", e)
+        act(f"Xray error: {e}", "warn")
+
+# models
 class LoginIn(BaseModel):
     username: str = "admin"
     password: str
 
-class InboundIn(BaseModel):
-    name: str = Field(..., min_length=1, max_length=80)
-    proto: str = Field(..., pattern="^(vless|trojan|ss)$")
-    network: str = Field(..., pattern="^(ws|xhttp|httpupgrade)$")
-    security: str = Field(default="tls", pattern="^(tls|none)$")
-    path: str = Field(default="", max_length=120)
-
-class InboundPatch(BaseModel):
-    name: Optional[str] = None
-    active: Optional[bool] = None
-    path: Optional[str] = None
-
 class LinkIn(BaseModel):
     label: str = Field(..., min_length=1, max_length=80)
-    inbound_id: str = Field(..., min_length=1)
+    inbound_id: Optional[str] = None
+    proto: Optional[str] = None
     volume_gb: float = Field(default=0, ge=0)
     days: int = Field(default=0, ge=0)
     max_conn: int = Field(default=0, ge=0)
     remark: str = Field(default="", max_length=200)
+
+class InboundIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+    proto: str = Field(default="vless", pattern="^(vless|trojan|ss)$")
+    network: str = Field(default="ws", pattern="^(ws|xhttp|httpupgrade)$")
+    security: str = Field(default="tls", pattern="^(none|tls)$")
+    port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    path: str = Field(default="", max_length=200)
+    xhttp_mode: str = Field(default="auto", pattern="^(auto|packet-up|stream-up)$")
+    ss_method: str = Field(default="aes-128-gcm", max_length=80)
+    remark: str = Field(default="", max_length=200)
+
+class InboundPatch(BaseModel):
+    name: Optional[str] = None
+    network: Optional[str] = None
+    security: Optional[str] = None
+    port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    path: Optional[str] = None
+    xhttp_mode: Optional[str] = None
+    ss_method: Optional[str] = None
+    active: Optional[bool] = None
+    remark: Optional[str] = None
 
 class LinkPatch(BaseModel):
     label: Optional[str] = None
@@ -456,7 +451,6 @@ class LinkPatch(BaseModel):
     active: Optional[bool] = None
     remark: Optional[str] = None
     reset_usage: Optional[bool] = None
-    inbound_id: Optional[str] = None
 
 class SubIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
@@ -478,6 +472,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 @app.middleware("http")
 async def capture_host(request: Request, call_next):
+    # Always learn public host from real inbound requests (Railway / reverse proxy)
     try:
         xf = (request.headers.get("x-forwarded-host") or "").split(",")[0].strip()
         hdr = (request.headers.get("host") or "").split(",")[0].strip()
@@ -497,23 +492,29 @@ async def capture_host(request: Request, call_next):
         pass
     return await call_next(request)
 
+
+
 @app.on_event("startup")
 async def startup():
     await load()
+    migrate_legacy()
+    await schedule_save()
     act(f"LPRW {VERSION} started", "ok")
-    log.info("LPRW %s host=%s inbounds=%s", VERSION, host(), len(INBOUNDS))
+    log.info("LPRW %s host=%s", VERSION, host())
+    await rebuild_xray()
 
 @app.on_event("shutdown")
 async def shutdown():
     await save()
+    await XRAY.stop()
 
 @app.get("/")
 async def root():
-    return RedirectResponse("/dashboard")
+    return {"service": "LPRW", "version": VERSION, "host": host(), "status": "active"}
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "online": len(CONNECTIONS), "links": len(LINKS), "inbounds": len(INBOUNDS), "uptime": int(time.time()-STATS["start"]), "version": VERSION}
+    return {"ok": True, "online": len(CONNECTIONS), "links": len(LINKS), "uptime": int(time.time()-STATS["start"])}
 
 @app.post("/api/login")
 async def login(body: LoginIn, response: Response):
@@ -545,11 +546,11 @@ async def stats(request: Request, _: bool = Depends(auth)):
         "bytes": STATS["bytes"], "bytes_h": bh(STATS["bytes"]), "reqs": STATS["reqs"],
         "online": len(CONNECTIONS),
         "links": len(LINKS), "active_links": sum(1 for l in LINKS.values() if allowed(l)),
-        "subs": len(SUBS), "inbounds": len(INBOUNDS),
-        "uptime": int(time.time()-STATS["start"]),
+        "subs": len(SUBS), "uptime": int(time.time()-STATS["start"]),
         "uptime_h": (lambda s: f"{s//3600:02d}:{(s%3600)//60:02d}:{s%60:02d}")(int(time.time()-STATS["start"])),
         "hourly": dict(sorted(HOURLY.items())[-24:]), "host": h,
-        "public_host": h, "version": VERSION, "announce": SETTINGS.get("announce", ""),
+        "public_host": h,
+        "version": VERSION, "announce": SETTINGS.get("announce", ""),
         "connections": [
             {"id": k, "uuid": v.get("uuid", "")[:8], "sec": int(time.time()-v.get("at", time.time()))}
             for k, v in list(CONNECTIONS.items())[:50]
@@ -560,71 +561,68 @@ async def stats(request: Request, _: bool = Depends(auth)):
 async def activity(_: bool = Depends(auth)):
     return list(ACT)[::-1][:150]
 
-# ── Inbounds ──
 @app.get("/api/inbounds")
-async def list_inbounds(_: bool = Depends(auth)):
-    async with ILOCK:
-        rows = list(INBOUNDS.values())
-    rows.sort(key=lambda x: x.get("created", ""), reverse=True)
-    return rows
+async def list_inbounds(request: Request, _: bool = Depends(auth)):
+    h = host(request)
+    return [_inbound_view(i, h) for i in sorted(INBOUNDS.values(), key=lambda x: x.get("created", ""), reverse=True)]
 
 @app.post("/api/inbounds")
-async def create_inbound(body: InboundIn, _: bool = Depends(auth)):
-    iid = secrets.token_urlsafe(8)
-    path = (body.path or "").strip()
-    if not path:
-        if body.proto == "trojan":
-            path = "/trojan-ws" if body.network == "ws" else f"/trojan-{body.network}"
-        elif body.proto == "ss":
-            path = "/ss-ws"
-        else:
-            path = "/ws" if body.network == "ws" else f"/{body.network}"
-    row = {
-        "id": iid,
-        "name": body.name.strip(),
-        "proto": body.proto,
-        "network": body.network,
-        "security": body.security,
-        "path": path,
-        "active": True,
-        "created": now().isoformat(),
+async def create_inbound(body: InboundIn, request: Request, _: bool = Depends(auth)):
+    _validate_inbound(body.proto, body.network, body.security)
+    if body.proto == "ss" and body.security == "tls":
+        raise HTTPException(422, "Shadowsocks native inbound does not use TLS")
+    iid = str(uuidlib.uuid4())
+    path = body.path.strip() or f"/lprw/{iid}"
+    inbound = {
+        "id": iid, "name": body.name, "proto": body.proto,
+        "network": body.network, "security": body.security,
+        "port": body.port or _next_inbound_port(),
+        "path": path, "xhttp_mode": body.xhttp_mode,
+        "ss_method": body.ss_method, "active": True,
+        "remark": body.remark, "clients": [], "created": now().isoformat(),
     }
-    async with ILOCK:
-        INBOUNDS[iid] = row
+    if any(int(x.get("port", 0)) == inbound["port"] for x in INBOUNDS.values()):
+        raise HTTPException(409, "port already used")
+    INBOUNDS[iid] = inbound
     await schedule_save()
+    await rebuild_xray()
     act(f"inbound created: {body.name}", "ok")
-    return row
+    return {"ok": True, "inbound": _inbound_view(inbound, host(request))}
 
 @app.patch("/api/inbounds/{iid}")
-async def patch_inbound(iid: str, body: InboundPatch, _: bool = Depends(auth)):
-    async with ILOCK:
-        if iid not in INBOUNDS:
-            raise HTTPException(404)
-        row = INBOUNDS[iid]
-        if body.name is not None:
-            row["name"] = body.name.strip()
-        if body.active is not None:
-            row["active"] = body.active
-        if body.path is not None:
-            row["path"] = body.path.strip()
+async def patch_inbound(iid: str, body: InboundPatch, request: Request, _: bool = Depends(auth)):
+    if iid not in INBOUNDS:
+        raise HTTPException(404, "inbound not found")
+    i = INBOUNDS[iid]
+    proto = i.get("proto", "vless")
+    network = body.network if body.network is not None else i.get("network", "ws")
+    security = body.security if body.security is not None else i.get("security", "none")
+    _validate_inbound(proto, network, security)
+    if proto == "ss" and security == "tls":
+        raise HTTPException(422, "Shadowsocks native inbound does not use TLS")
+    for k in ("name", "network", "security", "port", "path", "xhttp_mode", "ss_method", "active", "remark"):
+        v = getattr(body, k, None)
+        if v is not None:
+            i[k] = v
+    if body.port is not None and any(xid != iid and int(x.get("port", 0)) == body.port for xid, x in INBOUNDS.items()):
+        raise HTTPException(409, "port already used")
     await schedule_save()
-    return INBOUNDS[iid]
+    await rebuild_xray()
+    return {"ok": True, "inbound": _inbound_view(i, host(request))}
 
 @app.delete("/api/inbounds/{iid}")
 async def delete_inbound(iid: str, _: bool = Depends(auth)):
-    async with ILOCK:
-        if iid not in INBOUNDS:
-            raise HTTPException(404)
-        # prevent delete if links use it
-        used = any(l.get("inbound_id") == iid for l in LINKS.values())
-        if used:
-            raise HTTPException(400, "inbound is used by links")
-        INBOUNDS.pop(iid)
+    if iid not in INBOUNDS:
+        raise HTTPException(404)
+    if any(l.get("inbound_id") == iid for l in LINKS.values()):
+        raise HTTPException(409, "delete or move links using this inbound first")
+    name = INBOUNDS[iid].get("name", "")
+    del INBOUNDS[iid]
     await schedule_save()
-    act(f"inbound deleted: {iid}", "warn")
+    await rebuild_xray()
+    act(f"inbound deleted: {name}", "warn")
     return {"ok": True}
 
-# ── Links ──
 @app.get("/api/links")
 async def list_links(request: Request, _: bool = Depends(auth)):
     h = host(request)
@@ -635,187 +633,235 @@ async def list_links(request: Request, _: bool = Depends(auth)):
 
 @app.post("/api/links")
 async def create_link(body: LinkIn, request: Request, _: bool = Depends(auth)):
-    if body.inbound_id not in INBOUNDS:
-        raise HTTPException(400, "invalid inbound_id")
-    inbound = INBOUNDS[body.inbound_id]
-    if not inbound.get("active", True):
-        raise HTTPException(400, "inbound is disabled")
+    if body.inbound_id:
+        inbound = INBOUNDS.get(body.inbound_id)
+        if not inbound:
+            raise HTTPException(404, "inbound not found")
+        proto = inbound["proto"]
+    else:
+        proto = body.proto or "vless"
+        # Compatibility: create a matching inbound automatically.
+        iid = str(uuidlib.uuid4())
+        inbound = {
+            "id": iid, "name": f"Default {proto.upper()}",
+            "proto": proto, "network": "ws", "security": "tls",
+            "port": _next_inbound_port(), "path": f"/lprw/{iid}",
+            "xhttp_mode": "auto", "ss_method": "aes-128-gcm",
+            "active": True, "remark": "auto-created", "clients": [],
+            "created": now().isoformat(),
+        }
+        if proto == "ss":
+            inbound["security"] = "none"
+        INBOUNDS[iid] = inbound
     lid = str(uuidlib.uuid4())
     vol = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
     exp = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
-    row = {
-        "id": lid,
-        "label": body.label.strip(),
-        "inbound_id": body.inbound_id,
-        "proto": inbound["proto"],
-        "vol": vol,
-        "used": 0,
-        "exp": exp,
-        "max_conn": body.max_conn,
-        "active": True,
-        "remark": body.remark or "",
-        "created": now().isoformat(),
+    link = {
+        "id": lid, "label": body.label, "proto": proto, "inbound_id": inbound["id"],
+        "vol": vol, "used": 0, "exp": exp, "max_conn": body.max_conn,
+        "active": True, "remark": body.remark, "created": now().isoformat(),
     }
-    if inbound["proto"] == "ss":
-        row["ss_password"] = secrets.token_urlsafe(16)
+    inbound.setdefault("clients", []).append({"id": lid, "label": body.label, "active": True})
     async with LLOCK:
-        LINKS[lid] = row
+        LINKS[lid] = link
     await schedule_save()
+    await rebuild_xray()
     act(f"link created: {body.label}", "ok")
-    return enrich(row, host(request))
+    return {"ok": True, "link": enrich(link, host(request))}
 
 @app.patch("/api/links/{lid}")
-async def patch_link(lid: str, body: LinkPatch, request: Request, _: bool = Depends(auth)):
+async def patch_link(lid: str, body: LinkPatch, _: bool = Depends(auth)):
     async with LLOCK:
         if lid not in LINKS:
             raise HTTPException(404)
-        lk = LINKS[lid]
+        l = LINKS[lid]
         if body.label is not None:
-            lk["label"] = body.label.strip()
-        if body.volume_gb is not None:
-            lk["vol"] = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
-        if body.days is not None:
-            lk["exp"] = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
-        if body.max_conn is not None:
-            lk["max_conn"] = body.max_conn
-        if body.active is not None:
-            lk["active"] = body.active
-        if body.remark is not None:
-            lk["remark"] = body.remark
-        if body.reset_usage:
-            lk["used"] = 0
-        if body.inbound_id is not None:
-            if body.inbound_id not in INBOUNDS:
-                raise HTTPException(400, "invalid inbound")
-            lk["inbound_id"] = body.inbound_id
-            lk["proto"] = INBOUNDS[body.inbound_id]["proto"]
+            l["label"] = body.label
+            ib = INBOUNDS.get(l.get("inbound_id", ""))
+            if ib:
+                for c in ib.get("clients", []):
+                    if c.get("id") == lid:
+                        c["label"] = body.label
+        if body.volume_gb is not None: l["vol"] = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
+        if body.days is not None: l["exp"] = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
+        if body.max_conn is not None: l["max_conn"] = body.max_conn
+        if body.active is not None: l["active"] = body.active
+        if body.remark is not None: l["remark"] = body.remark
+        if body.reset_usage: l["used"] = 0
     await schedule_save()
-    return enrich(LINKS[lid], host(request))
-
-@app.delete("/api/links/{lid}")
-async def delete_link(lid: str, _: bool = Depends(auth)):
-    async with LLOCK:
-        if lid not in LINKS:
-            raise HTTPException(404)
-        LINKS.pop(lid)
-    await schedule_save()
-    act(f"link deleted: {lid[:8]}", "warn")
+    await rebuild_xray()
     return {"ok": True}
 
-# ── Subs ──
+@app.delete("/api/links/{lid}")
+async def del_link(lid: str, _: bool = Depends(auth)):
+    async with LLOCK:
+        if lid not in LINKS:
+            raise HTTPException(404)
+        lab = LINKS[lid].get("label", "")
+        iid = LINKS[lid].get("inbound_id")
+        if iid in INBOUNDS:
+            INBOUNDS[iid]["clients"] = [c for c in INBOUNDS[iid].get("clients", []) if c.get("id") != lid]
+        del LINKS[lid]
+    await schedule_save()
+    await rebuild_xray()
+    act(f"link deleted: {lab}", "warn")
+    return {"ok": True}
+
 @app.get("/api/subs")
 async def list_subs(request: Request, _: bool = Depends(auth)):
     h = host(request)
-    out = []
-    for sid, s in SUBS.items():
-        o = dict(s)
-        o["sub_url"] = f"https://{h}/sub-group/{sid}"
-        o["count"] = len(s.get("link_ids", []))
-        out.append(o)
+    async with SLOCK:
+        out = []
+        for s in SUBS.values():
+            o = dict(s)
+            o["url"] = f"https://{h}/sub-group/{s['id']}"
+            o["used_h"] = bh(s.get("used", 0))
+            vol = s.get("vol", 0)
+            o["vol_h"] = "نامحدود" if vol <= 0 else bh(vol)
+            out.append(o)
     return out
 
 @app.post("/api/subs")
 async def create_sub(body: SubIn, request: Request, _: bool = Depends(auth)):
-    sid = secrets.token_urlsafe(10)
+    sid = secrets.token_urlsafe(14)
     vol = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
     exp = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
-    row = {
-        "id": sid,
-        "name": body.name.strip(),
-        "link_ids": body.link_ids,
-        "vol": vol,
-        "exp": exp,
-        "created": now().isoformat(),
-    }
+    sub = {"id": sid, "name": body.name, "link_ids": body.link_ids, "vol": vol, "used": 0, "exp": exp, "created": now().isoformat()}
     async with SLOCK:
-        SUBS[sid] = row
+        SUBS[sid] = sub
     await schedule_save()
-    return {**row, "sub_url": f"https://{host(request)}/sub-group/{sid}"}
+    act(f"sub created: {body.name}", "ok")
+    return {"ok": True, "sub": sub, "url": f"https://{host(request)}/sub-group/{sid}"}
 
 @app.delete("/api/subs/{sid}")
-async def delete_sub(sid: str, _: bool = Depends(auth)):
+async def del_sub(sid: str, _: bool = Depends(auth)):
     async with SLOCK:
         if sid not in SUBS:
             raise HTTPException(404)
-        SUBS.pop(sid)
+        del SUBS[sid]
     await schedule_save()
     return {"ok": True}
 
 @app.get("/api/settings")
-async def get_settings(_: bool = Depends(auth)):
+async def get_set(_: bool = Depends(auth)):
     return SETTINGS
 
 @app.post("/api/settings")
-async def set_settings(body: SettingsIn, _: bool = Depends(auth)):
-    if body.panel_name is not None:
-        SETTINGS["panel_name"] = body.panel_name
-    if body.announce is not None:
-        SETTINGS["announce"] = body.announce
-    if body.support_url is not None:
-        SETTINGS["support_url"] = body.support_url
+async def set_set(body: SettingsIn, _: bool = Depends(auth)):
+    SETTINGS.update(body.model_dump(exclude_none=True))
     await schedule_save()
-    return SETTINGS
+    return {"ok": True, "settings": SETTINGS}
 
 @app.post("/api/password")
-async def change_password(body: PasswordIn, _: bool = Depends(auth)):
+async def chg_pw(body: PasswordIn, _: bool = Depends(auth)):
     global _admin
     if hp(body.current) != _admin:
-        raise HTTPException(400, "current password wrong")
+        raise HTTPException(400, "wrong current password")
     _admin = hp(body.new_password)
     await schedule_save()
-    act("admin password changed", "ok")
+    act("password changed", "ok")
     return {"ok": True}
 
-# ── Subscription endpoints ──
-@app.get("/sub/{uid}")
-async def sub_one(uid: str, request: Request):
-    lk = find_link(uid)
-    if not lk:
-        raise HTTPException(404)
-    h = host(request)
-    lines = [status_line(lk, h), share(lk, h)]
-    raw = "\n".join(lines)
-    b64 = base64.b64encode(raw.encode()).decode()
-    headers = {
-        "profile-title": "base64:" + base64.b64encode((lk.get("label") or "LPRW").encode()).decode(),
-        "subscription-userinfo": f"upload=0; download={int(lk.get('used',0))}; total={int(lk.get('vol',0))}; expire={int(datetime.fromisoformat(lk['exp']).timestamp()) if lk.get('exp') else 0}",
-        "profile-update-interval": "6",
-    }
-    return PlainTextResponse(b64, headers=headers)
+@app.get("/api/backup")
+async def backup(_: bool = Depends(auth)):
+    return {"links": dict(LINKS), "subs": dict(SUBS), "inbounds": dict(INBOUNDS), "settings": SETTINGS, "version": VERSION}
+
+# Public sub single (base64 like many clients expect)
+@app.get("/sub/{lid}")
+async def pub_sub_one(lid: str, request: Request):
+    async with LLOCK:
+        lk = LINKS.get(lid)
+        if not lk or not allowed(lk):
+            raise HTTPException(404)
+        h = host(request)
+        lines = [share(lk, h)]
+        used = lk.get("used", 0)
+        total = lk.get("vol", 0)
+        exp = lk.get("exp")
+        label = lk.get("label") or "LPRW"
+    expire_ts = 0
+    if exp:
+        try:
+            expire_ts = int(datetime.fromisoformat(exp).timestamp())
+        except Exception:
+            expire_ts = 0
+    content = base64.b64encode("\n".join(lines).encode()).decode()
+    title_b64 = base64.b64encode(label.encode()).decode()
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "profile-update-interval": "6",
+            "profile-title": f"base64:{title_b64}",
+            "subscription-userinfo": f"upload=0; download={used}; total={total}; expire={expire_ts}",
+        },
+    )
 
 @app.get("/sub-group/{sid}")
-async def sub_group(sid: str, request: Request):
-    s = SUBS.get(sid)
-    if not s:
-        raise HTTPException(404)
-    h = host(request)
-    lines = []
-    for lid in s.get("link_ids", []):
-        lk = LINKS.get(lid)
-        if lk and allowed(lk):
-            lines.append(share(lk, h))
-    if not lines:
-        lines = [status_line({"label": s.get("name", "LPRW"), "used": 0, "vol": 0}, h)]
-    raw = "\n".join(lines)
-    b64 = base64.b64encode(raw.encode()).decode()
-    return PlainTextResponse(b64)
+async def pub_sub_group(sid: str, request: Request):
+    async with SLOCK:
+        sub = SUBS.get(sid)
+        if not sub:
+            raise HTTPException(404)
+        if sub.get("exp"):
+            try:
+                if datetime.fromisoformat(sub["exp"]) < now():
+                    raise HTTPException(403, "expired")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+        h = host(request)
+        lines = []
+        total_used = 0
+        total_vol = 0
+        async with LLOCK:
+            ids = sub.get("link_ids") or list(LINKS.keys())
+            for i in ids:
+                lk = LINKS.get(i)
+                if lk and allowed(lk):
+                    lines.append(share(lk, h))
+                    total_used += int(lk.get("used", 0) or 0)
+                    total_vol += int(lk.get("vol", 0) or 0)
+        if not lines:
+            fake = {"label": sub.get("name") or "LPRW", "used": sub.get("used", 0), "vol": sub.get("vol", 0), "exp": sub.get("exp")}
+            lines = []
+    content = base64.b64encode("\n".join(lines).encode()).decode()
+    expire_ts = 0
+    if sub.get("exp"):
+        try:
+            expire_ts = int(datetime.fromisoformat(sub["exp"]).timestamp())
+        except Exception:
+            expire_ts = 0
+    title_b64 = base64.b64encode((sub.get("name") or "LPRW").encode()).decode()
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "profile-update-interval": "6",
+            "profile-title": f"base64:{title_b64}",
+            "subscription-userinfo": f"upload=0; download={total_used}; total={total_vol}; expire={expire_ts}",
+        },
+    )
 
-@app.get("/qr/{uid}")
-async def qr(uid: str, request: Request):
-    lk = find_link(uid)
-    if not lk:
-        raise HTTPException(404)
-    conf = share(lk, host(request))
-    img = qrcode.make(conf)
+
+@app.get("/qr/{lid}")
+async def qr(lid: str, request: Request):
+    async with LLOCK:
+        lk = LINKS.get(lid)
+        if not lk:
+            raise HTTPException(404)
+        text = share(lk, host(request))
+    img = qrcode.make(text)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
 
-@app.get("/u/{uid}", response_class=HTMLResponse)
-async def user_portal(uid: str, request: Request):
+@app.get("/u/{lid}")
+async def user_page(lid: str, request: Request):
     async with LLOCK:
-        lk = LINKS.get(uid)
+        lk = LINKS.get(lid)
         if not lk:
             raise HTTPException(404)
         d = enrich(lk, host(request))
@@ -838,34 +884,14 @@ async def user_portal(uid: str, request: Request):
         .replace("{{SUB}}", d["sub_url"])
         .replace("{{QR}}", d["qr_url"])
         .replace("{{REMARK}}", d.get("remark") or "")
-        .replace("{{HOST}}", host(request))
+        .replace("{{HOST}}", d.get("share", "").split("@")[-1].split(":")[0] if "@" in d.get("share", "") else host(request))
         .replace("{{VERSION}}", VERSION)
     )
     return HTMLResponse(html)
 
-# ── WebSocket / tunnel routes ──
-# All networks currently terminate as optimized WS on the server side.
-# Client share links advertise the chosen network (ws / httpupgrade / xhttp).
-# This is the practical approach for pure-Python Railway gateways.
-
+# ── CRITICAL: path includes UUID (same architecture as working gateways) ──
 @app.websocket("/ws/{uid}")
 async def ws_vless(ws: WebSocket, uid: str):
-    def is_ok(u):
-        return find_link(u)
-    await handle_vless_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-@app.websocket("/hu/{uid}")
-async def hu_vless(ws: WebSocket, uid: str):
-    """HTTPUpgrade path — handled as optimized WS for compatibility."""
-    def is_ok(u):
-        return find_link(u)
-    await handle_vless_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-@app.websocket("/xhttp/{uid}")
-async def xhttp_vless(ws: WebSocket, uid: str):
-    """xHTTP path — handled as optimized WS for compatibility on Railway."""
     def is_ok(u):
         return find_link(u)
     await handle_vless_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
@@ -875,32 +901,15 @@ async def xhttp_vless(ws: WebSocket, uid: str):
 async def ws_trojan(ws: WebSocket, uid: str):
     def is_ok(u):
         lk = find_link(u)
-        return lk if lk and lk.get("proto") == "trojan" else None
-    await handle_trojan_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-@app.websocket("/trojan-hu/{uid}")
-async def hu_trojan(ws: WebSocket, uid: str):
-    def is_ok(u):
+        if lk and lk.get("proto") == "trojan":
+            return lk
+        # allow if link exists as trojan even when path password matches id
+        return lk if lk and lk.get("proto", "vless") == "trojan" else (find_link(u) if find_link(u) and find_link(u).get("proto") == "trojan" else None)
+    # simpler:
+    def is_ok2(u):
         lk = find_link(u)
         return lk if lk and lk.get("proto") == "trojan" else None
-    await handle_trojan_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-@app.websocket("/trojan-xhttp/{uid}")
-async def xhttp_trojan(ws: WebSocket, uid: str):
-    def is_ok(u):
-        lk = find_link(u)
-        return lk if lk and lk.get("proto") == "trojan" else None
-    await handle_trojan_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-@app.websocket("/ss-ws/{uid}")
-async def ws_ss(ws: WebSocket, uid: str):
-    def is_ok(u):
-        lk = find_link(u)
-        return lk if lk and lk.get("proto") == "ss" else None
-    await handle_ss_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
+    await handle_trojan_ws(ws, uid, is_ok2, on_usage, reg_conn, unreg_conn)
     asyncio.create_task(schedule_save())
 
 from pages import DASHBOARD, USER_PORTAL  # noqa: E402
