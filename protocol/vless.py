@@ -1,4 +1,4 @@
-"""LPRW VLESS relay — WS / HTTPUpgrade / XHTTP (stream-one simplified)."""
+"""LPRW VLESS relay — WebSocket."""
 from __future__ import annotations
 
 import asyncio
@@ -96,7 +96,3 @@ async def handle_vless_ws(ws, uuid, is_allowed, on_usage, register_conn, unregis
             except Exception:
                 pass
         unregister_conn(conn_id)
-
-
-# HTTPUpgrade uses same binary framing after upgrade; reuse WS handler path via ASGI websocket
-handle_vless_httpupgrade = handle_vless_ws

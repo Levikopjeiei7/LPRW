@@ -1,4 +1,4 @@
-"""LPRW Trojan relay — WS / HTTPUpgrade."""
+"""LPRW Trojan relay — WebSocket."""
 from __future__ import annotations
 
 import asyncio
@@ -89,4 +89,3 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
         unregister_conn(conn_id)
 
 
-handle_trojan_httpupgrade = handle_trojan_ws
