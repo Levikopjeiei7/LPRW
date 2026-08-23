@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.8.0"
+VERSION = "4.8.1"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -347,8 +347,10 @@ def share(link: dict, h: Optional[str] = None) -> str:
         if mode not in ("stream-up", "packet-up"):
             mode = "packet-up"
         path_for_client = path
-        # http/1.1: more reliable stream/packet through Railway edge than h2
-        use_alpn = "http/1.1"
+        # XHTTP works with both HTTP/2 and HTTP/1.1. Prefer h2 first;
+        # Xray's split-http transport is designed around long-lived HTTP
+        # streams, while HTTP/1.1 remains the fallback for restrictive edges.
+        use_alpn = "h2,http/1.1"
     elif network == "httpupgrade":
         ctype = "httpupgrade"
         path_for_client = path
