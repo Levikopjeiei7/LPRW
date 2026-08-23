@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.0.0"
+VERSION = "4.1.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -297,6 +297,21 @@ def get_inbound(link: dict) -> dict:
     }
 
 
+def tunnel_path(ib: dict, uid: str) -> str:
+    """Canonical tunnel path that always maps to a real WebSocket handler."""
+    proto = ib.get("proto", "vless")
+    network = ib.get("network", "ws")
+    if network == "xhttp":
+        return f"/xhttp/{proto}/{uid}"
+    if network == "httpupgrade":
+        return f"/hu/{proto}/{uid}"
+    if proto == "trojan":
+        return f"/trojan-ws/{uid}"
+    if proto == "ss":
+        return f"/ss-ws/{uid}"
+    return f"/ws/{uid}"
+
+
 def share(link: dict, h: Optional[str] = None) -> str:
     """Build share URI from link + its inbound."""
     h = h or host()
@@ -305,9 +320,8 @@ def share(link: dict, h: Optional[str] = None) -> str:
     ib = get_inbound(link)
     proto = ib.get("proto", link.get("proto", "vless"))
     network = ib.get("network", "ws")
-    security = ib.get("security", "tls")
-    path_base = (ib.get("path") or "/ws").rstrip("/")
-    path = f"{path_base}/{uid}"
+    security = ib.get("security", "tls") or "none"
+    path = tunnel_path(ib, uid)
     fp = "chrome"
     alpn = "h2,http/1.1"
     sni = h
@@ -315,53 +329,49 @@ def share(link: dict, h: Optional[str] = None) -> str:
     if proto == "ss":
         method = link.get("ss_method") or ib.get("ss_method") or "aes-256-gcm"
         password = link.get("ss_password") or uid
-        # ss://base64(method:password@host:port)#remark  + ws via plugin-style path in remark note
         userinfo = base64.urlsafe_b64encode(
             f"{method}:{password}@{h}:443".encode()
         ).decode().rstrip("=")
-        # Also emit v2ray-plugin style for WS: many clients use ss + path
-        # Prefer SIP002 with plugin for ws
-        plugin = quote(f"v2ray-plugin;mode=websocket;path={path};host={h};tls")
+        mode = "websocket"
+        if network == "httpupgrade":
+            mode = "websocket"
+        plugin = quote(f"v2ray-plugin;mode={mode};path={path};host={h};tls" + ("" if security == "tls" else ""))
         return f"ss://{userinfo}?plugin={plugin}#{lab}"
+
+    # Client transport type
+    ctype = network
+    if network == "httpupgrade":
+        ctype = "httpupgrade"
+    elif network == "xhttp":
+        ctype = "xhttp"
+    else:
+        ctype = "ws"
 
     if proto == "trojan":
         params = {
-            "security": security if security else "none",
-            "type": network,
+            "security": security if security != "none" else "none",
+            "type": ctype,
             "host": h,
             "path": path,
-            "sni": sni,
-            "fp": fp,
-            "alpn": alpn,
         }
-        if network == "xhttp":
+        if security == "tls":
+            params.update({"sni": sni, "fp": fp, "alpn": alpn})
+        if ctype == "xhttp":
             params["mode"] = ib.get("xhttp_mode") or "stream-one"
-        if security != "tls":
-            params.pop("sni", None)
-            params.pop("fp", None)
-            params.pop("alpn", None)
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
         return f"trojan://{uid}@{h}:443?{q}#{lab}"
 
-    # vless
     params = {
         "encryption": "none",
-        "security": security if security else "none",
-        "type": network,
+        "security": security if security != "none" else "none",
+        "type": ctype,
         "host": h,
         "path": path,
-        "sni": sni,
-        "fp": fp,
-        "alpn": alpn,
     }
-    if network == "xhttp":
+    if security == "tls":
+        params.update({"sni": sni, "fp": fp, "alpn": alpn})
+    if ctype == "xhttp":
         params["mode"] = ib.get("xhttp_mode") or "stream-one"
-    if network == "httpupgrade":
-        params["type"] = "httpupgrade"
-    if security != "tls":
-        params.pop("sni", None)
-        params.pop("fp", None)
-        params.pop("alpn", None)
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
     return f"vless://{uid}@{h}:443?{q}#{lab}"
 
@@ -395,9 +405,10 @@ def enrich(l: dict, h: str) -> dict:
     o["ok"] = allowed(l)
     o["share"] = share(l, h)
     o["online"] = sum(1 for c in CONNECTIONS.values() if c.get("uuid") == l["id"])
+    # پنل کاربری = همان لینک ساب (مثل پاسارگاد): مرورگر → ظاهر، کلاینت → کانفیگ
     o["user_url"] = f"https://{h}/u/{l['id']}"
     o["qr_url"] = f"https://{h}/qr/{l['id']}"
-    o["sub_url"] = f"https://{h}/sub/{l['id']}"
+    o["sub_url"] = f"https://{h}/u/{l['id']}"
     ib = get_inbound(l)
     o["inbound_name"] = ib.get("name", "")
     o["proto"] = ib.get("proto", l.get("proto", "vless"))
@@ -489,6 +500,13 @@ class SubIn(BaseModel):
     link_ids: list[str] = Field(default_factory=list)
     volume_gb: float = Field(default=0, ge=0)
     days: int = Field(default=0, ge=0)
+
+
+class SubPatch(BaseModel):
+    name: Optional[str] = None
+    link_ids: Optional[list[str]] = None
+    volume_gb: Optional[float] = None
+    days: Optional[int] = None
 
 
 class SettingsIn(BaseModel):
@@ -757,7 +775,9 @@ async def list_subs(request: Request, _: bool = Depends(auth)):
         out = []
         for s in SUBS.values():
             o = dict(s)
-            o["url"] = f"https://{h}/sub-group/{s['id']}"
+            # یک URL برای پنل کاربری + ساب (مرورگر ظاهر، کلاینت کانفیگ)
+            o["url"] = f"https://{h}/g/{s['id']}"
+            o["portal"] = o["url"]
             o["used_h"] = bh(s.get("used", 0))
             vol = s.get("vol", 0)
             o["vol_h"] = "نامحدود" if vol <= 0 else bh(vol)
@@ -783,7 +803,32 @@ async def create_sub(body: SubIn, request: Request, _: bool = Depends(auth)):
         SUBS[sid] = sub
     await schedule_save()
     act(f"sub created: {body.name}", "ok")
-    return {"ok": True, "sub": sub, "url": f"https://{host(request)}/sub-group/{sid}"}
+    h = host(request)
+    return {
+        "ok": True,
+        "sub": sub,
+        "url": f"https://{h}/g/{sid}",
+        "portal": f"https://{h}/g/{sid}",
+    }
+
+
+@app.patch("/api/subs/{sid}")
+async def patch_sub(sid: str, body: SubPatch, _: bool = Depends(auth)):
+    async with SLOCK:
+        if sid not in SUBS:
+            raise HTTPException(404)
+        s = SUBS[sid]
+        if body.name is not None:
+            s["name"] = body.name
+        if body.link_ids is not None:
+            s["link_ids"] = body.link_ids
+        if body.volume_gb is not None:
+            s["vol"] = int(body.volume_gb * 1024**3) if body.volume_gb > 0 else 0
+        if body.days is not None:
+            s["exp"] = (now() + timedelta(days=body.days)).isoformat() if body.days > 0 else None
+    await schedule_save()
+    act(f"sub updated: {sid[:8]}", "ok")
+    return {"ok": True}
 
 
 @app.delete("/api/subs/{sid}")
@@ -830,18 +875,47 @@ async def backup(_: bool = Depends(auth)):
     }
 
 
-@app.get("/sub/{lid}")
-async def pub_sub_one(lid: str, request: Request):
+@app.get("/qr/{lid}")
+async def qr(lid: str, request: Request):
     async with LLOCK:
         lk = LINKS.get(lid)
-        if not lk or not allowed(lk):
+        if not lk:
             raise HTTPException(404)
-        h = host(request)
-        lines = [status_line(lk, h), share(lk, h)]
-        used = lk.get("used", 0)
-        total = lk.get("vol", 0)
-        exp = lk.get("exp")
-        label = lk.get("label") or "LPRW"
+        text = share(lk, host(request))
+    img = qrcode.make(text)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
+def _wants_html(request: Request) -> bool:
+    """مرورگر → HTML ؛ کلاینت ساب → کانفیگ (مثل پاسارگاد)."""
+    accept = (request.headers.get("accept") or "").lower()
+    ua = (request.headers.get("user-agent") or "").lower()
+    # subscription clients
+    client_hints = (
+        "v2ray", "clash", "sing-box", "singbox", "shadowrocket", "quantumult",
+        "stash", "nekobox", "streisand", "hiddify", "surge", "loon", "okhttp",
+    )
+    if any(x in ua for x in client_hints):
+        return False
+    if "text/html" in accept and "mozilla" in ua:
+        return True
+    if not accept or accept == "*/*":
+        # بسیاری از کلاینت‌ها Accept خاصی نمی‌فرستند
+        if "mozilla" in ua:
+            return True
+        return False
+    return "text/html" in accept and "mozilla" in ua
+
+
+def _sub_response_for_link(lk: dict, h: str) -> Response:
+    lines = [status_line(lk, h), share(lk, h)]
+    used = lk.get("used", 0)
+    total = lk.get("vol", 0)
+    exp = lk.get("exp")
+    label = lk.get("label") or "LPRW"
     expire_ts = 0
     if exp:
         try:
@@ -861,81 +935,21 @@ async def pub_sub_one(lid: str, request: Request):
     )
 
 
-@app.get("/sub-group/{sid}")
-async def pub_sub_group(sid: str, request: Request):
-    async with SLOCK:
-        sub = SUBS.get(sid)
-        if not sub:
-            raise HTTPException(404)
-        if sub.get("exp"):
-            try:
-                if datetime.fromisoformat(sub["exp"]) < now():
-                    raise HTTPException(403, "expired")
-            except HTTPException:
-                raise
-            except Exception:
-                pass
-        h = host(request)
-        lines = []
-        total_used = 0
-        total_vol = 0
-        async with LLOCK:
-            ids = sub.get("link_ids") or list(LINKS.keys())
-            for i in ids:
-                lk = LINKS.get(i)
-                if lk and allowed(lk):
-                    lines.append(status_line(lk, h))
-                    lines.append(share(lk, h))
-                    total_used += int(lk.get("used", 0) or 0)
-                    total_vol += int(lk.get("vol", 0) or 0)
-        if not lines:
-            fake = {
-                "label": sub.get("name") or "LPRW",
-                "used": sub.get("used", 0),
-                "vol": sub.get("vol", 0),
-                "exp": sub.get("exp"),
-            }
-            lines = [status_line(fake, h)]
-    content = base64.b64encode("\n".join(lines).encode()).decode()
-    expire_ts = 0
-    if sub.get("exp"):
-        try:
-            expire_ts = int(datetime.fromisoformat(sub["exp"]).timestamp())
-        except Exception:
-            expire_ts = 0
-    title_b64 = base64.b64encode((sub.get("name") or "LPRW").encode()).decode()
-    return Response(
-        content=content,
-        media_type="text/plain; charset=utf-8",
-        headers={
-            "profile-update-interval": "6",
-            "profile-title": f"base64:{title_b64}",
-            "subscription-userinfo": f"upload=0; download={total_used}; total={total_vol}; expire={expire_ts}",
-        },
-    )
-
-
-@app.get("/qr/{lid}")
-async def qr(lid: str, request: Request):
-    async with LLOCK:
-        lk = LINKS.get(lid)
-        if not lk:
-            raise HTTPException(404)
-        text = share(lk, host(request))
-    img = qrcode.make(text)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    return StreamingResponse(buf, media_type="image/png")
-
-
 @app.get("/u/{lid}")
+@app.get("/sub/{lid}")
 async def user_page(lid: str, request: Request):
+    """ادغام پنل کاربری + ساب: یک لینک برای ظاهر و کانفیگ."""
     async with LLOCK:
         lk = LINKS.get(lid)
         if not lk:
             raise HTTPException(404)
-        d = enrich(lk, host(request))
+        h = host(request)
+        if not _wants_html(request):
+            if not allowed(lk):
+                raise HTTPException(403, "inactive")
+            return _sub_response_for_link(lk, h)
+        d = enrich(lk, h)
+
     from pages import USER_PORTAL
 
     exp = d.get("exp") or "—"
@@ -955,7 +969,93 @@ async def user_page(lid: str, request: Request):
         .replace("{{SUB}}", d["sub_url"])
         .replace("{{QR}}", d["qr_url"])
         .replace("{{REMARK}}", d.get("remark") or "")
-        .replace("{{HOST}}", host(request))
+        .replace("{{HOST}}", h)
+        .replace("{{VERSION}}", VERSION)
+    )
+    return HTMLResponse(html)
+
+
+@app.get("/g/{sid}")
+@app.get("/sub-group/{sid}")
+async def group_portal(sid: str, request: Request):
+    """ساب گروهی = پنل کاربری گروهی (مرورگر ظاهر / کلاینت کانفیگ)."""
+    async with SLOCK:
+        sub = SUBS.get(sid)
+        if not sub:
+            raise HTTPException(404)
+        if sub.get("exp"):
+            try:
+                if datetime.fromisoformat(sub["exp"]) < now():
+                    raise HTTPException(403, "expired")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+        h = host(request)
+        lines = []
+        total_used = 0
+        total_vol = 0
+        first_lk = None
+        async with LLOCK:
+            ids = sub.get("link_ids") or list(LINKS.keys())
+            for i in ids:
+                lk = LINKS.get(i)
+                if lk and allowed(lk):
+                    if first_lk is None:
+                        first_lk = lk
+                    lines.append(status_line(lk, h))
+                    lines.append(share(lk, h))
+                    total_used += int(lk.get("used", 0) or 0)
+                    total_vol += int(lk.get("vol", 0) or 0)
+
+        if not _wants_html(request):
+            if not lines:
+                raise HTTPException(404, "no configs")
+            content = base64.b64encode("\n".join(lines).encode()).decode()
+            expire_ts = 0
+            if sub.get("exp"):
+                try:
+                    expire_ts = int(datetime.fromisoformat(sub["exp"]).timestamp())
+                except Exception:
+                    expire_ts = 0
+            title_b64 = base64.b64encode((sub.get("name") or "LPRW").encode()).decode()
+            return Response(
+                content=content,
+                media_type="text/plain; charset=utf-8",
+                headers={
+                    "profile-update-interval": "6",
+                    "profile-title": f"base64:{title_b64}",
+                    "subscription-userinfo": f"upload=0; download={total_used}; total={total_vol}; expire={expire_ts}",
+                },
+            )
+
+    # HTML portal for group
+    from pages import USER_PORTAL
+
+    label = sub.get("name") or "LPRW"
+    share_txt = lines[1] if len(lines) > 1 else ""
+    pct = min(100, int(total_used / total_vol * 100)) if total_vol > 0 else 0
+    exp = sub.get("exp") or "—"
+    if exp and exp != "—":
+        try:
+            exp = exp[:19].replace("T", " ")
+        except Exception:
+            pass
+    html = (
+        USER_PORTAL.replace("{{LABEL}}", label)
+        .replace("{{STATUS}}", "فعال")
+        .replace("{{STATUS_CLASS}}", "ok")
+        .replace("{{USED}}", bh(total_used))
+        .replace("{{VOL}}", "نامحدود" if total_vol <= 0 else bh(total_vol))
+        .replace("{{PCT}}", str(pct))
+        .replace("{{PROTO}}", "SUB")
+        .replace("{{ONLINE}}", "—")
+        .replace("{{EXP}}", str(exp))
+        .replace("{{SHARE}}", share_txt)
+        .replace("{{SUB}}", f"https://{h}/g/{sid}")
+        .replace("{{QR}}", f"https://{h}/qr/{first_lk['id']}" if first_lk else "")
+        .replace("{{REMARK}}", f"{len(lines)//2} کانفیگ")
+        .replace("{{HOST}}", h)
         .replace("{{VERSION}}", VERSION)
     )
     return HTMLResponse(html)
@@ -991,21 +1091,9 @@ async def ws_ss(ws: WebSocket, uid: str):
 
 
 # Dynamic paths for custom inbounds: /{path}/{uid}
-@app.websocket("/hu/{proto}/{uid}")
-async def ws_httpupgrade(ws: WebSocket, proto: str, uid: str):
-    if proto == "trojan":
-        def is_ok(u):
-            lk = find_link(u)
-            return lk if lk and get_inbound(lk).get("proto") == "trojan" else None
-        await handle_trojan_ws(ws, uid, is_ok, on_usage, reg_conn, unreg_conn)
-    else:
-        await handle_vless_ws(ws, uid, find_link, on_usage, reg_conn, unreg_conn)
-    asyncio.create_task(schedule_save())
-
-
-@app.websocket("/xhttp/{proto}/{uid}")
-async def ws_xhttp(ws: WebSocket, proto: str, uid: str):
-    # XHTTP stream-one over WS path (Railway-compatible approximation)
+async def _dispatch_tunnel(ws: WebSocket, proto: str, uid: str):
+    """Route connection to the right protocol handler."""
+    proto = (proto or "vless").lower()
     if proto == "trojan":
         def is_ok(u):
             lk = find_link(u)
@@ -1019,6 +1107,26 @@ async def ws_xhttp(ws: WebSocket, proto: str, uid: str):
     else:
         await handle_vless_ws(ws, uid, find_link, on_usage, reg_conn, unreg_conn)
     asyncio.create_task(schedule_save())
+
+
+# HTTPUpgrade = WebSocket upgrade under a dedicated path (Xray-compatible)
+@app.websocket("/hu/{proto}/{uid}")
+@app.websocket("/httpupgrade/{proto}/{uid}")
+async def ws_httpupgrade(ws: WebSocket, proto: str, uid: str):
+    await _dispatch_tunnel(ws, proto, uid)
+
+
+# XHTTP path — accepted as WebSocket on Railway edge (stream-one compatible clients)
+@app.websocket("/xhttp/{proto}/{uid}")
+@app.websocket("/xhttp/{proto}/{uid}/")
+async def ws_xhttp(ws: WebSocket, proto: str, uid: str):
+    await _dispatch_tunnel(ws, proto, uid)
+
+
+# Catch-all: any custom inbound path ending with /{uuid}
+@app.websocket("/p/{network}/{proto}/{uid}")
+async def ws_generic(ws: WebSocket, network: str, proto: str, uid: str):
+    await _dispatch_tunnel(ws, proto, uid)
 
 
 from pages import DASHBOARD  # noqa: E402

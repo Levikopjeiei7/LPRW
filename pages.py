@@ -87,13 +87,14 @@ th{color:var(--mu);font-weight:700;font-size:.73rem}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .empty{text-align:center;padding:32px 14px;color:var(--mu)}
 .chart-box{position:relative;height:240px}
-.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--bd);padding:6px 4px calc(6px + env(safe-area-inset-bottom));justify-content:space-around}
-.bottom-nav button{flex:1;border:none;background:transparent;color:var(--mu);font-family:inherit;font-size:.65rem;font-weight:700;padding:7px 2px;border-radius:10px;cursor:pointer}
-.bottom-nav button.active{color:var(--pr2);background:rgba(99,102,241,.12)}
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--bd);padding:10px 6px calc(12px + env(safe-area-inset-bottom));justify-content:space-around;gap:4px;box-shadow:0 -8px 28px rgba(0,0,0,.35)}
+.bottom-nav button{flex:1;border:none;background:transparent;color:var(--mu);font-family:inherit;font-size:.72rem;font-weight:700;padding:12px 4px;border-radius:14px;cursor:pointer;min-height:56px;line-height:1.25}
+.bottom-nav button span{display:block;font-size:1.35rem;margin-bottom:4px}
+.bottom-nav button.active{color:var(--pr2);background:rgba(99,102,241,.16)}
 @media(max-width:900px){
   .shell{grid-template-columns:1fr}
   .side{display:none!important}
-  .main{padding:14px 12px 90px}
+  .main{padding:14px 12px 110px}
   .bottom-nav{display:flex}
 }
 code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-break:break-all}
@@ -160,7 +161,8 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
     <section id="pg-subs" class="hidden">
       <div class="panel">
         <div class="panel-h"><h3>سابسکریپشن گروهی</h3><button class="btn btn-p btn-sm" onclick="openSubModal()">+ ساب جدید</button></div>
-        <div style="overflow:auto"><table><thead><tr><th>نام</th><th>لینک‌ها</th><th>URL</th><th></th></tr></thead><tbody id="subs-body"></tbody></table></div>
+        <p style="color:var(--mu);font-size:.84rem;margin-bottom:10px">لینک ساب همان پنل کاربری است — در مرورگر ظاهر دارد، در کلاینت کانفیگ می‌دهد.</p>
+        <div style="overflow:auto"><table><thead><tr><th>نام</th><th>لینک‌ها</th><th>URL پنل/ساب</th><th></th></tr></thead><tbody id="subs-body"></tbody></table></div>
       </div>
     </section>
 
@@ -236,12 +238,17 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 </div></div>
 
 <div class="modal-bg" id="m-sub"><div class="modal">
-  <h3>ساب گروهی</h3>
+  <h3 id="ms-title">ساب گروهی</h3>
+  <input type="hidden" id="ms-id" value="">
   <div class="field"><label>نام</label><input id="ms-name"></div>
-  <div class="field"><label>لینک‌ها (چندتایی با Ctrl)</label><select id="ms-links" multiple style="min-height:100px"></select></div>
+  <div class="field"><label>لینک‌ها (چندتایی)</label><select id="ms-links" multiple style="min-height:120px"></select></div>
+  <div class="form-row">
+    <div class="field"><label>حجم GB (0=نامحدود)</label><input id="ms-vol" type="number" min="0" value="0"></div>
+    <div class="field"><label>روز (0=نامحدود)</label><input id="ms-days" type="number" min="0" value="0"></div>
+  </div>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
     <button class="btn" onclick="closeModals()">انصراف</button>
-    <button class="btn btn-p" onclick="createSub()">ایجاد</button>
+    <button class="btn btn-p" id="ms-save" onclick="saveSub()">ذخیره</button>
   </div>
 </div></div>
 
@@ -346,10 +353,16 @@ async function loadLinks(){
 
 async function loadSubs(){
   const subs=await api('/api/subs');
+  window._subs=subs;
   $('#subs-body').innerHTML=subs.map(s=>`<tr>
-    <td>${s.name}</td><td>${(s.link_ids||[]).length}</td>
-    <td><code>${s.url}</code> <button class="btn btn-sm" onclick="copyText('${s.url}')">کپی</button></td>
-    <td><button class="btn btn-sm btn-d" onclick="delSub('${s.id}')">حذف</button></td>
+    <td><b>${s.name}</b></td><td>${(s.link_ids||[]).length}</td>
+    <td><code style="font-size:.7rem">${s.url}</code><br>
+      <button class="btn btn-sm" onclick="copyText('${s.url}')">کپی پنل/ساب</button>
+    </td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editSub('${s.id}')">ویرایش</button>
+      <button class="btn btn-sm btn-d" onclick="delSub('${s.id}')">حذف</button>
+    </td>
   </tr>`).join('')||'<tr><td colspan="4" class="empty">سابی نیست</td></tr>';
 }
 
@@ -363,9 +376,42 @@ async function loadSettings(){
 function openLinkModal(){loadInbounds();$('#m-link').classList.add('show')}
 function openIbModal(){$('#m-ib').classList.add('show')}
 async function openSubModal(){
+  $('#ms-id').value='';
+  $('#ms-title').textContent='ساب گروهی جدید';
+  $('#ms-name').value='';
+  $('#ms-vol').value='0';
+  $('#ms-days').value='0';
   links=await api('/api/links');
   $('#ms-links').innerHTML=links.map(l=>`<option value="${l.id}">${l.label}</option>`).join('');
   $('#m-sub').classList.add('show');
+}
+
+async function editSub(id){
+  const s=(window._subs||[]).find(x=>x.id===id);
+  if(!s)return;
+  $('#ms-id').value=id;
+  $('#ms-title').textContent='ویرایش ساب';
+  $('#ms-name').value=s.name||'';
+  $('#ms-vol').value=s.vol? (s.vol/1024/1024/1024).toFixed(2):0;
+  $('#ms-days').value=0;
+  links=await api('/api/links');
+  const selected=new Set(s.link_ids||[]);
+  $('#ms-links').innerHTML=links.map(l=>`<option value="${l.id}" ${selected.has(l.id)?'selected':''}>${l.label}</option>`).join('');
+  $('#m-sub').classList.add('show');
+}
+
+async function saveSub(){
+  const id=$('#ms-id').value;
+  const ids=[...$('#ms-links').selectedOptions].map(o=>o.value);
+  const body={name:$('#ms-name').value,link_ids:ids,volume_gb:parseFloat($('#ms-vol').value)||0,days:parseInt($('#ms-days').value)||0};
+  if(id){
+    await api('/api/subs/'+id,{method:'PATCH',body:JSON.stringify(body)});
+    toast('ساب ویرایش شد');
+  }else{
+    await api('/api/subs',{method:'POST',body:JSON.stringify(body)});
+    toast('ساب ساخته شد');
+  }
+  closeModals();loadSubs();
 }
 
 async function createLink(){
@@ -382,11 +428,6 @@ async function createIb(){
     security:$('#mi-sec').value,path:$('#mi-path').value,ss_method:$('#mi-ssm').value
   })});
   closeModals();toast('اینباند ساخته شد');loadInbounds();
-}
-async function createSub(){
-  const ids=[...$('#ms-links').selectedOptions].map(o=>o.value);
-  await api('/api/subs',{method:'POST',body:JSON.stringify({name:$('#ms-name').value,link_ids:ids})});
-  closeModals();toast('ساب ساخته شد');loadSubs();
 }
 async function delLink(id){if(!confirm('حذف؟'))return;await api('/api/links/'+id,{method:'DELETE'});loadLinks()}
 async function delIb(id){if(!confirm('حذف اینباند؟'))return;await api('/api/inbounds/'+id,{method:'DELETE'});loadInbounds()}
