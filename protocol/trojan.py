@@ -1,4 +1,4 @@
-"""LPRW Trojan relay — high-performance WS gateway (v4)."""
+"""LPRW Trojan relay — aligned with production WS gateway behavior."""
 from __future__ import annotations
 
 import asyncio
@@ -99,7 +99,7 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
     conn_id = register_conn(password)
     writer = None
     try:
-        first_msg = await asyncio.wait_for(ws.receive(), timeout=12.0)
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
         if first_msg["type"] == "websocket.disconnect":
             return
         first_chunk = first_msg.get("bytes") or (first_msg.get("text") or "").encode()
@@ -116,7 +116,7 @@ async def handle_trojan_ws(ws, password, is_allowed, on_usage, register_conn, un
             await ws.close(code=1008, reason="udp not supported")
             return
 
-        reader, writer = await open_tcp(address, port, timeout=8.0)
+        reader, writer = await open_tcp(address, port, timeout=10.0)
         tune_socket(writer)
 
         if payload:

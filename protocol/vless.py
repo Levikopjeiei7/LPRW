@@ -1,6 +1,5 @@
 """
-LPRW VLESS relay — high-performance WS gateway (v4).
-Optimized buffers, early response, TCP tuning for lower latency.
+LPRW VLESS relay — aligned with production WS gateway behavior.
 """
 from __future__ import annotations
 
@@ -13,14 +12,14 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger("LPRW.vless")
 
-RELAY_BUF = 2 * 1024 * 1024
-SOCK_BUF = 8 * 1024 * 1024
-WRITE_HIGH_WATER = 1024 * 1024
+RELAY_BUF = 1024 * 1024
+SOCK_BUF = 4 * 1024 * 1024
+WRITE_HIGH_WATER = 512 * 1024
 
-QUOTA_MIN_BATCH = 64 * 1024
-QUOTA_MAX_BATCH = 4 * 1024 * 1024
-QUOTA_START_BATCH = 256 * 1024
-QUOTA_CHECK_INTERVAL = 0.2
+QUOTA_MIN_BATCH = 32 * 1024
+QUOTA_MAX_BATCH = 2 * 1024 * 1024
+QUOTA_START_BATCH = 128 * 1024
+QUOTA_CHECK_INTERVAL = 0.25
 
 
 def tune_socket(writer: asyncio.StreamWriter):
@@ -31,19 +30,8 @@ def tune_socket(writer: asyncio.StreamWriter):
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCK_BUF)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCK_BUF)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         if hasattr(socket, "TCP_QUICKACK"):
-            try:
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
-            except OSError:
-                pass
-        if hasattr(socket, "TCP_KEEPIDLE"):
-            try:
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
-            except OSError:
-                pass
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
     except OSError:
         pass
 
@@ -61,7 +49,8 @@ class QuotaGate:
         self.rate_ewma = 0.0
 
     def _call(self, n: int) -> bool:
-        return bool(self.on_usage(self.uuid, n))
+        res = self.on_usage(self.uuid, n)
+        return bool(res)
 
     async def add(self, nbytes: int) -> bool:
         if not self.ok:
@@ -73,7 +62,7 @@ class QuotaGate:
             flush, self.pending = self.pending, 0
             if elapsed > 0:
                 inst = flush / elapsed
-                self.rate_ewma = inst if not self.rate_ewma else (0.75 * self.rate_ewma + 0.25 * inst)
+                self.rate_ewma = inst if not self.rate_ewma else (0.7 * self.rate_ewma + 0.3 * inst)
                 target = int(self.rate_ewma * QUOTA_CHECK_INTERVAL)
                 self.batch_bytes = max(QUOTA_MIN_BATCH, min(QUOTA_MAX_BATCH, target or QUOTA_MIN_BATCH))
             self.last_check = now
@@ -124,8 +113,10 @@ def parse_vless_header(chunk: bytes):
     return command, address, port, chunk[pos:]
 
 
-async def open_tcp(address: str, port: int, timeout: float = 8.0):
+async def open_tcp(address: str, port: int, timeout: float = 10.0):
+    """Prefer IPv4 to avoid slow/broken IPv6 paths on some hosts."""
     loop = asyncio.get_running_loop()
+    last_err = None
     try:
         infos = await loop.getaddrinfo(
             address, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP
@@ -133,21 +124,22 @@ async def open_tcp(address: str, port: int, timeout: float = 8.0):
     except Exception as e:
         raise OSError(f"dns failed {address}: {e}") from e
 
+    # Sort: IPv4 first
     infos = sorted(infos, key=lambda x: 0 if x[0] == socket.AF_INET else 1)
     for family, type_, proto, _, sockaddr in infos:
-        sock = None
         try:
             sock = socket.socket(family, type_, proto)
             sock.setblocking(False)
             await asyncio.wait_for(loop.sock_connect(sock, sockaddr), timeout=timeout)
             reader, writer = await asyncio.open_connection(sock=sock)
             return reader, writer
-        except Exception:
-            if sock:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
+        except Exception as e:
+            last_err = e
+            try:
+                sock.close()
+            except Exception:
+                pass
+    # Fallback
     return await asyncio.wait_for(asyncio.open_connection(address, port), timeout=timeout)
 
 
@@ -179,7 +171,12 @@ async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, gate: Quo
             pass
 
 
-async def relay_tcp_to_ws(ws: WebSocket, reader: asyncio.StreamReader, gate: QuotaGate, vless_prefix: bool = True):
+async def relay_tcp_to_ws(
+    ws: WebSocket,
+    reader: asyncio.StreamReader,
+    gate: QuotaGate,
+    vless_prefix: bool = True,
+):
     first = True
     try:
         while True:
@@ -213,7 +210,7 @@ async def handle_vless_ws(ws, uuid, is_allowed, on_usage, register_conn, unregis
     conn_id = register_conn(uuid)
     writer = None
     try:
-        first_msg = await asyncio.wait_for(ws.receive(), timeout=12.0)
+        first_msg = await asyncio.wait_for(ws.receive(), timeout=15.0)
         if first_msg["type"] == "websocket.disconnect":
             return
         first_chunk = first_msg.get("bytes") or (first_msg.get("text") or "").encode()
@@ -231,9 +228,10 @@ async def handle_vless_ws(ws, uuid, is_allowed, on_usage, register_conn, unregis
             await ws.close(code=1008, reason="udp not supported")
             return
 
-        reader, writer = await open_tcp(address, port, timeout=8.0)
+        reader, writer = await open_tcp(address, port, timeout=10.0)
         tune_socket(writer)
 
+        # Immediate VLESS response so client does not stall waiting for remote first byte
         await ws.send_bytes(b"\x00\x00")
 
         if payload:
@@ -244,6 +242,7 @@ async def handle_vless_ws(ws, uuid, is_allowed, on_usage, register_conn, unregis
         done, pending = await asyncio.wait(
             {
                 asyncio.create_task(relay_ws_to_tcp(ws, writer, gate)),
+                # prefix already sent — do not prepend again
                 asyncio.create_task(relay_tcp_to_ws(ws, reader, gate, vless_prefix=False)),
             },
             return_when=asyncio.FIRST_COMPLETED,
