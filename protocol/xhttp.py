@@ -76,7 +76,7 @@ async def teardown(sid: str, reason: str = ""):
         t.cancel()
         try:
             await t
-        except Exception:
+        except (asyncio.CancelledError, Exception):
             pass
     w = sess.get("writer")
     if w:
@@ -103,6 +103,14 @@ async def get_or_create(sid, uuid, mode, is_allowed, reg, unreg, ip: str):
     async with LOCK:
         sess = SESSIONS.get(sid)
         if sess is not None:
+            # A session id belongs to exactly one credential/mode.  Reusing it
+            # with a different link must never attach to an existing tunnel.
+            if sess.get("uuid") != uuid:
+                raise HTTPException(403, "session credential mismatch")
+            if sess.get("mode") != mode:
+                raise HTTPException(400, "session mode mismatch")
+            if sess.get("closed"):
+                raise HTTPException(404, "session closed")
             sess["last"] = time.time()
             return sess
         link = is_allowed(uuid)
@@ -284,6 +292,8 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
     @router.get("/xhttp/{mode}/{uuid}/{session_id}/")
     async def downlink(mode: str, uuid: str, session_id: str, request: Request):
         ensure_reaper()
+        if mode not in ("packet-up", "stream-up"):
+            raise HTTPException(404, "unknown xhttp mode")
         sess = await get_or_create(
             session_id, uuid, mode, is_allowed, register_conn, unregister_conn, _client_ip(request)
         )
@@ -326,7 +336,7 @@ def bind_handlers(is_allowed, on_usage, register_conn, unregister_conn, get_prot
             logger.warning("stream-up fail: %s", e)
             await teardown(session_id, str(e))
             raise HTTPException(502, "write failed")
-        return Response(status_code=200, headers=HDR)
+        return Response(status_code=200, headers={k: v for k, v in HDR.items() if k != "content-type"})
 
     @router.post("/xhttp-siz10/packet-up/{uuid}/{session_id}/{seq}")
     @router.post("/xhttp-siz10/packet-up/{uuid}/{session_id}/{seq}/")
