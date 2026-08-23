@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.4.0"
+VERSION = "4.5.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -302,8 +302,8 @@ def tunnel_path(ib: dict, uid: str) -> str:
     proto = ib.get("proto", "vless")
     network = ib.get("network", "ws")
     if network == "xhttp":
-        mode = ib.get("xhttp_mode") or "stream-up"
-        return f"/xhttp/{mode}/{uid}"
+        # Always stream-up — most compatible pure-Python server mode on Railway
+        return f"/xhttp/stream-up/{uid}"
     if network == "httpupgrade":
         return f"/hu/{uid}"
     if proto == "trojan":
@@ -346,7 +346,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
         use_alpn = "h2,http/1.1"
     elif network == "httpupgrade":
         ctype = "httpupgrade"
-        path_for_client = path + "?ed=2560"
+        path_for_client = path
         use_alpn = "http/1.1"
     else:
         ctype = "ws"
@@ -361,7 +361,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
             "path": path_for_client,
         }
         if network == "xhttp":
-            params["mode"] = ib.get("xhttp_mode") or "stream-up"
+            params["mode"] = "stream-up"
         if security == "tls":
             params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
         q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -375,7 +375,7 @@ def share(link: dict, h: Optional[str] = None) -> str:
         "path": path_for_client,
     }
     if network == "xhttp":
-        params["mode"] = ib.get("xhttp_mode") or "stream-up"
+        params["mode"] = "stream-up"
     if security == "tls":
         params.update({"sni": sni, "fp": fp, "alpn": use_alpn})
     q = "&".join(f"{k}={quote(str(v), safe='')}" for k, v in params.items())
@@ -478,7 +478,7 @@ class InboundIn(BaseModel):
     security: str = Field(default="tls", pattern="^(tls|none)$")
     path: str = Field(default="", max_length=120)
     ss_method: str = Field(default="aes-256-gcm")
-    xhttp_mode: str = Field(default="stream-one")
+    xhttp_mode: str = Field(default="stream-up")
 
 
 class LinkIn(BaseModel):
@@ -1153,6 +1153,11 @@ def _xhttp_proto(uid: str) -> str:
 bind_xhttp(find_link, on_usage, reg_conn, unreg_conn, _xhttp_proto)
 from protocol.xhttp import router as xhttp_router
 app.include_router(xhttp_router)
+
+@app.get("/debug/xhttp")
+async def debug_xhttp():
+    from protocol import xhttp as xh
+    return {"ok": True, "sessions": len(xh.SESSIONS), "routes": "xhttp live"}
 
 from pages import DASHBOARD  # noqa: E402
 
