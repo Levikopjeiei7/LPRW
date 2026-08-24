@@ -111,6 +111,35 @@ th{color:var(--mu);font-weight:700;font-size:.73rem}
   .bottom-nav{display:flex}
 }
 code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-break:break-all}
+
+/* LPRW Modern UI v4.10 */
+:root{
+  --bg:#0a0d12; --panel:#11161e; --panel2:#151b25; --line:#27303d;
+  --text:#eef2f7; --muted:#8e99aa; --accent:#7c5cff; --orange:#ff8a1f;
+  --green:#24c77b; --purple:#9b6cff; --gray:#77808e; --red:#ff4d5f;
+  --shadow:0 18px 50px rgba(0,0,0,.28);
+}
+body{background:radial-gradient(circle at 15% 0%,rgba(124,92,255,.10),transparent 34%),var(--bg)!important;color:var(--text)}
+.card,.panel,.stat,.box{background:linear-gradient(145deg,rgba(21,27,37,.98),rgba(14,18,25,.98))!important;border:1px solid var(--line)!important;border-radius:18px!important;box-shadow:var(--shadow)}
+button,.btn{border:1px solid #303a49!important;border-radius:12px!important;background:linear-gradient(145deg,#1a2230,#121821)!important;color:#eef2f7!important;box-shadow:0 7px 18px rgba(0,0,0,.20);transition:.18s transform,.18s border-color,.18s box-shadow}
+button:hover,.btn:hover{transform:translateY(-2px);border-color:#5d6a7d!important;box-shadow:0 12px 28px rgba(0,0,0,.30)}
+.btn-p,.primary{background:linear-gradient(135deg,#8064ff,#6246e8)!important;border-color:#8e78ff!important}
+input,textarea,select{background:#0c1118!important;border:1px solid #2b3543!important;border-radius:12px!important;color:#fff!important}
+.dashboard-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:18px 0}
+.dashboard-stat{position:relative;overflow:hidden;padding:20px;border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.dashboard-stat:after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;right:-45px;top:-55px;background:currentColor;opacity:.10}
+.dashboard-stat .value{font-size:31px;font-weight:800;letter-spacing:-.8px}
+.dashboard-stat .label{color:var(--muted);font-size:13px;margin-bottom:9px}
+.stat-orange{color:var(--orange);background:linear-gradient(145deg,#21170e,#14171b)}
+.stat-green{color:var(--green);background:linear-gradient(145deg,#0e2119,#14171b)}
+.stat-purple{color:var(--purple);background:linear-gradient(145deg,#1a1228,#14171b)}
+.stat-gray{color:var(--gray);background:linear-gradient(145deg,#171b20,#14171b)}
+.stat-red{color:var(--red);background:linear-gradient(145deg,#271217,#14171b)}
+.section-title{font-size:18px;font-weight:800;margin:20px 0 12px}
+.chart-card{padding:20px;min-height:300px}
+@media(max-width:1000px){.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.dashboard-grid{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -142,7 +171,44 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
       <button class="btn btn-sm btn-d" onclick="doLogout()">خروج</button>
     </div>
   </aside>
-  <main class="main">
+  
+<div class="dashboard-grid">
+  <div class="dashboard-stat stat-orange"><div class="label">ترافیک کل</div><div class="value" id="dash-traffic">—</div></div>
+  <div class="dashboard-stat stat-green"><div class="label">آنلاین</div><div class="value" id="dash-online">—</div></div>
+  <div class="dashboard-stat stat-purple"><div class="label">لینک فعال</div><div class="value" id="dash-active">—</div></div>
+  <div class="dashboard-stat stat-gray"><div class="label">آپ‌تایم</div><div class="value" id="dash-uptime">—</div></div>
+  <div class="dashboard-stat stat-red"><div class="label">لینک‌های غیر فعال</div><div class="value" id="dash-inactive">—</div></div>
+</div
+
+<div class="card chart-card">
+  <div class="section-title">ترافیک ساعتی</div>
+  <canvas id="traffic-hourly-chart" height="110"></canvas>
+</div>
+<script>
+(function(){
+  const c=document.getElementById('traffic-hourly-chart'); if(!c) return;
+  const ctx=c.getContext('2d');
+  const values=window.hourlyTraffic || [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+  const dpr=window.devicePixelRatio||1;
+  function draw(){
+    const w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+    const max=Math.max(1,...values), pad=24, step=(w-pad*2)/Math.max(1,values.length-1);
+    const pts=values.map((v,i)=>[pad+i*step,h-pad-(v/max)*(h-pad*2)]);
+    ctx.lineWidth=3;ctx.lineJoin='round';ctx.lineCap='round';
+    for(let i=1;i<pts.length;i++){
+      ctx.beginPath();ctx.moveTo(...pts[i-1]);ctx.lineTo(...pts[i]);
+      ctx.strokeStyle=values[i]>=values[i-1] ? '#24c77b' : '#ff4d5f';ctx.stroke();
+    }
+    ctx.font='11px sans-serif';ctx.fillStyle='#7f8a99';
+    values.forEach((v,i)=>{if(i%3===0)ctx.fillText(String(i).padStart(2,'0')+':00',pts[i][0]-10,h-5)});
+  }
+  draw();window.addEventListener('resize',draw);
+})();
+</script>
+>
+
+<main class="main">
     <div class="topbar"><h1 id="page-title">داشبورد</h1><div class="acts" id="top-acts"></div></div>
 
     <section id="pg-home">
@@ -388,7 +454,7 @@ async function loadLinks(){
     <td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span> ${l.online?`🟢${l.online}`:''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editLink('${l.id}')">ویرایش</button>
-      <button class=\"btn btn-sm\" onclick='copySubscriptionConfigs(${JSON.stringify(l.sub_configs || [])})'>کپی کانفیگ</button>
+      <button class=\"btn btn-sm\" onclick='copySubscriptionConfigs(${JSON.stringify(l.sub_configs || [])})'>کپی کانفیگ</button><button class="btn btn-sm" onclick="resetLink('${l.id}')">ریست</button>
       <button class="btn btn-sm" onclick="copyText('${l.sub_url}')">ساب</button>
       <button class="btn btn-sm btn-d" onclick="delLink('${l.id}')">حذف</button>
     </td>
@@ -572,6 +638,17 @@ async function copySubscriptionConfigs(items){
     }
     toast('کانفیگ کپی شد');
   }catch(e){ toast('کپی کانفیگ انجام نشد'); }
+}
+
+
+async function resetLink(id){
+  if(!confirm('مصرف حجم و زمان این لینک از نو شروع شود؟')) return;
+  try{
+    const r=await fetch('/api/links/'+encodeURIComponent(id)+'/reset',{method:'POST'});
+    if(!r.ok) throw new Error();
+    toast('لینک ریست شد');
+    setTimeout(()=>location.reload(),350);
+  }catch(e){toast('ریست لینک انجام نشد');}
 }
 
 function copyText(t){navigator.clipboard.writeText(t);toast('کپی شد')}

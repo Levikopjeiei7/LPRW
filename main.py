@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.9.2"
+VERSION = "4.10.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -408,6 +408,11 @@ def enrich(l: dict, h: str) -> dict:
     o["share"] = share(l, h)
     o["sub_configs"] = subscription_config_lines(l, h)
     o["online"] = sum(1 for c in CONNECTIONS.values() if c.get("uuid") == l["id"])
+    # Link is inactive when its expiry has passed or its traffic allowance is exhausted.
+    o["inactive"] = bool(
+        (l.get("expiry") and l.get("expiry") < time.time()) or
+        (l.get("total") and l.get("total") > 0 and l.get("used", 0) >= l.get("total"))
+    )
     # پنل کاربری = همان لینک ساب (مثل پاسارگاد): مرورگر → ظاهر، کلاینت → کانفیگ
     o["user_url"] = f"https://{h}/u/{l['id']}"
     o["qr_url"] = f"https://{h}/qr/{l['id']}"
