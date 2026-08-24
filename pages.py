@@ -112,33 +112,46 @@ th{color:var(--mu);font-weight:700;font-size:.73rem}
 }
 code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-break:break-all}
 
-/* LPRW Modern UI v4.10 */
+/* LPRW Modern UI v4.11 — premium dashboard */
 :root{
-  --bg:#0a0d12; --panel:#11161e; --panel2:#151b25; --line:#27303d;
-  --text:#eef2f7; --muted:#8e99aa; --accent:#7c5cff; --orange:#ff8a1f;
-  --green:#24c77b; --purple:#9b6cff; --gray:#77808e; --red:#ff4d5f;
-  --shadow:0 18px 50px rgba(0,0,0,.28);
+  --bg:#070a10;--panel:#0f141d;--panel2:#151c27;--line:rgba(255,255,255,.075);
+  --text:#f4f7fb;--muted:#8995a8;--accent:#7c5cff;--orange:#ff8a1f;
+  --green:#22c77a;--purple:#a06cff;--gray:#87909d;--red:#ff4d62;
+  --cyan:#2dd4bf;--shadow:0 22px 70px rgba(0,0,0,.38);
 }
-body{background:radial-gradient(circle at 15% 0%,rgba(124,92,255,.10),transparent 34%),var(--bg)!important;color:var(--text)}
-.card,.panel,.stat,.box{background:linear-gradient(145deg,rgba(21,27,37,.98),rgba(14,18,25,.98))!important;border:1px solid var(--line)!important;border-radius:18px!important;box-shadow:var(--shadow)}
-button,.btn{border:1px solid #303a49!important;border-radius:12px!important;background:linear-gradient(145deg,#1a2230,#121821)!important;color:#eef2f7!important;box-shadow:0 7px 18px rgba(0,0,0,.20);transition:.18s transform,.18s border-color,.18s box-shadow}
-button:hover,.btn:hover{transform:translateY(-2px);border-color:#5d6a7d!important;box-shadow:0 12px 28px rgba(0,0,0,.30)}
-.btn-p,.primary{background:linear-gradient(135deg,#8064ff,#6246e8)!important;border-color:#8e78ff!important}
-input,textarea,select{background:#0c1118!important;border:1px solid #2b3543!important;border-radius:12px!important;color:#fff!important}
-.dashboard-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:18px 0}
-.dashboard-stat{position:relative;overflow:hidden;padding:20px;border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow)}
-.dashboard-stat:after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;right:-45px;top:-55px;background:currentColor;opacity:.10}
-.dashboard-stat .value{font-size:31px;font-weight:800;letter-spacing:-.8px}
-.dashboard-stat .label{color:var(--muted);font-size:13px;margin-bottom:9px}
-.stat-orange{color:var(--orange);background:linear-gradient(145deg,#21170e,#14171b)}
-.stat-green{color:var(--green);background:linear-gradient(145deg,#0e2119,#14171b)}
-.stat-purple{color:var(--purple);background:linear-gradient(145deg,#1a1228,#14171b)}
-.stat-gray{color:var(--gray);background:linear-gradient(145deg,#171b20,#14171b)}
-.stat-red{color:var(--red);background:linear-gradient(145deg,#271217,#14171b)}
-.section-title{font-size:18px;font-weight:800;margin:20px 0 12px}
-.chart-card{padding:20px;min-height:300px}
-@media(max-width:1000px){.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:600px){.dashboard-grid{grid-template-columns:1fr}}
+body{background:radial-gradient(circle at 12% -8%,rgba(124,92,255,.18),transparent 30%),radial-gradient(circle at 90% 10%,rgba(45,212,191,.07),transparent 26%),var(--bg)!important;color:var(--text)}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 72%)}
+.side{background:linear-gradient(180deg,rgba(15,20,29,.98),rgba(8,11,17,.98))!important;border-left:1px solid var(--line)!important;box-shadow:18px 0 55px rgba(0,0,0,.18)}
+.side .logo{padding-bottom:20px}.side .logo .mk{box-shadow:0 0 30px rgba(124,92,255,.28)}
+.nav-item{position:relative;padding:13px 14px!important;margin:3px 0;border:1px solid transparent!important;border-radius:14px!important;transition:.2s ease!important;overflow:hidden}
+.nav-item:before{content:"";width:4px;height:0;position:absolute;right:0;top:50%;transform:translateY(-50%);border-radius:8px;background:var(--accent);transition:.2s}
+.nav-item:hover{background:linear-gradient(90deg,rgba(124,92,255,.05),rgba(124,92,255,.13))!important;color:#fff!important;transform:translateX(-2px)}
+.nav-item.active{background:linear-gradient(90deg,rgba(124,92,255,.08),rgba(124,92,255,.20))!important;color:#a995ff!important;border-color:rgba(124,92,255,.22)!important;box-shadow:inset 0 0 25px rgba(124,92,255,.05),0 8px 25px rgba(0,0,0,.15)}
+.nav-item.active:before{height:28px}
+.main{padding:24px 28px 48px!important}.topbar{margin-bottom:22px!important}.topbar h1{font-size:1.55rem!important;letter-spacing:-.5px}
+button,.btn{border:1px solid #303a49!important;border-radius:13px!important;background:linear-gradient(145deg,#1c2533,#10161f)!important;color:#f1f5f9!important;box-shadow:0 8px 22px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);transition:.2s ease!important;min-height:38px}
+button:hover,.btn:hover{transform:translateY(-2px);border-color:#65738a!important;box-shadow:0 14px 32px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.05)}
+button:active,.btn:active{transform:translateY(0) scale(.98)}
+.btn-p,.primary{background:linear-gradient(135deg,#896fff,#5e43e9)!important;border-color:#9c8aff!important;box-shadow:0 10px 30px rgba(124,92,255,.28)!important}
+.btn-p:hover{box-shadow:0 16px 38px rgba(124,92,255,.38)!important}
+.btn-d{background:linear-gradient(145deg,rgba(255,77,98,.15),rgba(30,15,20,.8))!important;color:#ff7180!important;border-color:rgba(255,77,98,.3)!important}
+.kpis{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:14px!important;max-width:none!important;margin-bottom:18px!important}
+.kpi{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(18,24,34,.98),rgba(12,16,23,.98))!important;border:1px solid var(--line)!important;border-radius:18px!important;padding:16px 17px!important;min-height:112px;box-shadow:var(--shadow)!important}
+.kpi:before{content:"";position:absolute;width:90px;height:90px;left:-28px;bottom:-38px;border-radius:50%;background:var(--accent);opacity:.10;filter:blur(2px)}
+.kpi .t{font-size:.75rem!important;color:var(--muted)!important;margin-bottom:10px!important}.kpi .v{font-size:1.42rem!important;font-weight:900!important}
+.kpi:nth-child(1){--accent:var(--orange);border-color:rgba(255,138,31,.22)!important}.kpi:nth-child(2){--accent:var(--green);border-color:rgba(34,199,122,.22)!important}.kpi:nth-child(3){--accent:var(--purple);border-color:rgba(160,108,255,.22)!important}.kpi:nth-child(4){--accent:var(--gray);border-color:rgba(135,144,157,.22)!important}
+.kpi:nth-child(5){--accent:var(--red)}
+.panel{background:linear-gradient(145deg,rgba(17,23,32,.98),rgba(11,15,22,.98))!important;border:1px solid var(--line)!important;border-radius:20px!important;box-shadow:var(--shadow)!important;padding:20px!important}
+.panel-h{margin-bottom:16px!important}.panel-h h3{font-size:1.03rem!important}.panel-h:after{content:"";width:44px;height:3px;border-radius:99px;background:linear-gradient(90deg,var(--accent),transparent);display:block;margin-right:auto;opacity:.75}
+.dashboard-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:1.4fr .6fr;gap:18px;margin-bottom:18px;padding:24px!important;background:linear-gradient(135deg,rgba(31,25,58,.96),rgba(14,20,29,.98))!important;border:1px solid rgba(124,92,255,.24)!important;border-radius:22px!important;box-shadow:0 25px 80px rgba(0,0,0,.32)!important}
+.dashboard-hero:before{content:"";position:absolute;width:280px;height:280px;left:-90px;top:-120px;background:radial-gradient(circle,rgba(124,92,255,.28),transparent 68%);pointer-events:none}.hero-title{font-size:1.5rem;font-weight:900;margin-bottom:6px}.hero-sub{color:var(--muted);font-size:.84rem}.hero-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.hero-metric{padding:12px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.07)}.hero-metric b{display:block;font-size:1.05rem}.hero-metric span{font-size:.7rem;color:var(--muted)}
+.dashboard-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin:18px 0}.dashboard-stat{position:relative;overflow:hidden;padding:18px!important;border-radius:19px!important;border:1px solid var(--line)!important;box-shadow:var(--shadow)!important;min-height:132px}.dashboard-stat:after{content:"";position:absolute;width:145px;height:145px;border-radius:50%;left:-48px;bottom:-75px;background:currentColor;opacity:.12;filter:blur(2px)}.dashboard-stat .value{font-size:1.7rem!important;font-weight:900!important;letter-spacing:-.8px}.dashboard-stat .label{color:var(--muted);font-size:.76rem;margin-bottom:10px}.dashboard-stat .icon{font-size:1.3rem;margin-bottom:9px;display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:10px;background:currentColor;color:inherit;filter:saturate(1.1)}
+.stat-orange{color:var(--orange);background:linear-gradient(145deg,#24170c,#12171d)!important;border-color:rgba(255,138,31,.26)!important}.stat-green{color:var(--green);background:linear-gradient(145deg,#0c2118,#12171d)!important;border-color:rgba(34,199,122,.26)!important}.stat-purple{color:var(--purple);background:linear-gradient(145deg,#1b112b,#12171d)!important;border-color:rgba(160,108,255,.26)!important}.stat-gray{color:var(--gray);background:linear-gradient(145deg,#181d23,#12171d)!important;border-color:rgba(135,144,157,.25)!important}.stat-red{color:var(--red);background:linear-gradient(145deg,#2a1117,#12171d)!important;border-color:rgba(255,77,98,.26)!important}
+.dashboard-two{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.7fr);gap:14px}.chart-card{padding:20px!important;min-height:360px}.chart-toolbar{display:flex;align-items:center;gap:8px}.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);display:inline-block}.activity-item{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);font-size:.8rem}.activity-item:last-child{border-bottom:0}.activity-time{color:var(--muted);font-size:.68rem;min-width:48px}.activity-icon{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;background:rgba(124,92,255,.12);color:#a995ff}
+.section-title{font-size:18px;font-weight:900;margin:20px 0 12px}.chart-box{position:relative;height:300px}.empty{text-align:center;padding:32px 14px;color:var(--muted)}
+@media(max-width:1100px){.dashboard-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}.dashboard-hero{grid-template-columns:1fr}.dashboard-two{grid-template-columns:1fr}}
+@media(max-width:700px){.main{padding:15px 12px 110px!important}.dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dashboard-stat{min-height:118px;padding:14px!important}.dashboard-stat .value{font-size:1.4rem!important}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}.kpi{min-height:98px}.chart-box{height:250px}}
+@media(max-width:430px){.dashboard-grid,.kpis{grid-template-columns:1fr 1fr!important}.dashboard-hero{padding:18px!important}.hero-title{font-size:1.25rem}.hero-metrics{gap:7px}.hero-metric{padding:9px}}
 
 </style>
 </head>
@@ -159,13 +172,13 @@ input,textarea,select{background:#0c1118!important;border:1px solid #2b3543!impo
 <div class="shell">
   <aside class="side">
     <div class="logo"><div class="brand-mark" aria-label="LPRW"><span>L</span><i></i></div><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
-    <div class="nav-item active" data-page="home" onclick="go('home')">داشبورد</div>
-    <div class="nav-item" data-page="links" onclick="go('links')">لینک‌ها</div>
-    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">پروتکل و اینباند</div>
-    <div class="nav-item" data-page="outbound" onclick="go('outbound')">اوتباند</div>
-    <div class="nav-item" data-page="subs" onclick="go('subs')">سابسکریپشن</div>
-    <div class="nav-item" data-page="online" onclick="go('online')">آنلاین</div>
-    <div class="nav-item" data-page="settings" onclick="go('settings')">تنظیمات</div>
+    <div class="nav-item active" data-page="home" onclick="go('home')">⌂&nbsp;&nbsp; داشبورد</div>
+    <div class="nav-item" data-page="links" onclick="go('links')">🔗&nbsp;&nbsp; لینک‌ها</div>
+    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">◈&nbsp;&nbsp; پروتکل و اینباند</div>
+    <div class="nav-item" data-page="outbound" onclick="go('outbound')">⇥&nbsp;&nbsp; اوتباند</div>
+    <div class="nav-item" data-page="subs" onclick="go('subs')">☷&nbsp;&nbsp; سابسکریپشن</div>
+    <div class="nav-item" data-page="online" onclick="go('online')">●&nbsp;&nbsp; آنلاین</div>
+    <div class="nav-item" data-page="settings" onclick="go('settings')">⚙&nbsp;&nbsp; تنظیمات</div>
     <div class="side-bottom">
       <button class="btn btn-sm" onclick="toggleTheme()">تم</button>
       <button class="btn btn-sm btn-d" onclick="doLogout()">خروج</button>
@@ -176,14 +189,29 @@ input,textarea,select{background:#0c1118!important;border:1px solid #2b3543!impo
     <div class="topbar"><h1 id="page-title">داشبورد</h1><div class="acts" id="top-acts"></div></div>
 
     <section id="pg-home">
-      <div class="kpis">
-        <div class="kpi"><div class="t">ترافیک کل</div><div class="v" id="k-bytes">—</div></div>
-        <div class="kpi"><div class="t">آنلاین</div><div class="v" id="k-online">0</div></div>
-        <div class="kpi"><div class="t">لینک فعال</div><div class="v" id="k-links">0</div></div>
-        <div class="kpi"><div class="t">آپتایم</div><div class="v" id="k-up">—</div></div>
+      <div class="dashboard-hero">
+        <div>
+          <div class="hero-title">مرکز کنترل LPRW</div>
+          <div class="hero-sub">نمای لحظه‌ای وضعیت پنل، مصرف ترافیک و سلامت لینک‌ها</div>
+        </div>
+        <div class="hero-metrics">
+          <div class="hero-metric"><b id="hero-reqs">0</b><span>درخواست‌ها</span></div>
+          <div class="hero-metric"><b id="hero-subs">0</b><span>سابسکریپشن</span></div>
+          <div class="hero-metric"><b id="hero-inbounds">0</b><span>اینباند</span></div>
+          <div class="hero-metric"><b id="hero-status">پایدار</b><span>وضعیت سرویس</span></div>
+        </div>
       </div>
-      <div class="panel"><div class="panel-h"><h3>ترافیک ساعتی</h3></div><div class="chart-box"><canvas id="chart"></canvas></div></div>
-      <div class="panel"><div class="panel-h"><h3>فعالیت اخیر</h3></div><ul id="act-list" style="list-style:none"></ul></div>
+      <div class="dashboard-grid">
+        <div class="dashboard-stat stat-orange"><div class="icon">↕</div><div class="label">ترافیک کل</div><div class="value" id="k-bytes">—</div></div>
+        <div class="dashboard-stat stat-green"><div class="icon">●</div><div class="label">آنلاین</div><div class="value" id="k-online">0</div></div>
+        <div class="dashboard-stat stat-purple"><div class="icon">↗</div><div class="label">لینک فعال</div><div class="value" id="k-links">0</div></div>
+        <div class="dashboard-stat stat-gray"><div class="icon">◷</div><div class="label">آپتایم</div><div class="value" id="k-up">—</div></div>
+        <div class="dashboard-stat stat-red"><div class="icon">!</div><div class="label">لینک‌های غیر فعال</div><div class="value" id="k-inactive">0</div></div>
+      </div>
+      <div class="dashboard-two">
+        <div class="panel chart-card"><div class="panel-h"><h3>ترافیک ساعتی</h3><div class="chart-toolbar"><span class="live-dot"></span><span style="color:var(--muted);font-size:.72rem">زنده · ۲۴ ساعت اخیر</span></div></div><div class="chart-box"><canvas id="chart"></canvas></div></div>
+        <div class="panel"><div class="panel-h"><h3>فعالیت اخیر</h3></div><ul id="act-list" style="list-style:none"></ul></div>
+      </div>
     </section>
 
     <section id="pg-links" class="hidden">
@@ -384,6 +412,11 @@ async function loadStats(){
   $('#k-online').textContent=s.online;
   $('#k-links').textContent=s.active_links+'/'+s.links;
   $('#k-up').textContent=s.uptime_h;
+  $('#k-inactive').textContent=Math.max(0,(s.links||0)-(s.active_links||0));
+  $('#hero-reqs').textContent=(s.reqs||0).toLocaleString('fa-IR');
+  $('#hero-subs').textContent=(s.subs||0).toLocaleString('fa-IR');
+  $('#hero-inbounds').textContent=(s.inbounds||0).toLocaleString('fa-IR');
+  $('#hero-status').textContent='پایدار';
   const grid=$('#online-grid');
   grid.innerHTML=(s.connections||[]).map(c=>`<div class="kpi"><div class="t">${c.uuid}…</div><div class="v" style="font-size:1rem">${c.sec}s</div></div>`).join('')||'<div class="empty">اتصالی نیست</div>';
   const acts=await api('/api/activity');
@@ -392,7 +425,9 @@ async function loadStats(){
   const data=Object.values(s.hourly||{});
   if(!$('#chart')) return;
   if(chart)chart.destroy();
-  chart=new Chart($('#chart'),{type:'line',data:{labels,datasets:[{label:'Bytes',data,borderColor:'#818cf8',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8b93a8'}},y:{ticks:{color:'#8b93a8'}}},responsive:true,maintainAspectRatio:false}});
+  const ctx=$('#chart').getContext('2d');
+  const grad=ctx.createLinearGradient(0,0,0,300);grad.addColorStop(0,'rgba(124,92,255,.28)');grad.addColorStop(1,'rgba(124,92,255,0)');
+  chart=new Chart($('#chart'),{type:'line',data:{labels,datasets:[{label:'ترافیک',data,borderWidth:3,fill:true,backgroundColor:grad,tension:.38,pointRadius:3,pointHoverRadius:6,pointBackgroundColor:'#fff',pointBorderWidth:2,segment:{borderColor:c=>{const a=c.p0.parsed.y,b=c.p1.parsed.y;return b>=a?'#22c77a':'#ff4d62'},backgroundColor:'rgba(124,92,255,.04)'}}]},options:{interaction:{intersect:false,mode:'index'},plugins:{legend:{display:false},tooltip:{rtl:true,displayColors:false,callbacks:{label:c=>' '+c.formattedValue}}},scales:{x:{grid:{color:'rgba(255,255,255,.035)'},ticks:{color:'#8b93a8'}},y:{grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#8b93a8'}}},responsive:true,maintainAspectRatio:false}});
 }
 
 async function loadInbounds(){
