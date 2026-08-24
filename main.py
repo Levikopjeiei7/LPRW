@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.9.0"
+VERSION = "4.9.1"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -366,6 +366,18 @@ def subscription_lines(lk: dict, h: str) -> list[str]:
     return lines
 
 
+def subscription_config_lines(lk: dict, h: str) -> list[str]:
+    """Only real proxy configs shown in the user portal/copy buttons.
+    Subscription metadata such as the usage/status line is intentionally excluded.
+    """
+    lines = []
+    if not SETTINGS.get("outbound_remove_primary", False):
+        lines.append(share(lk, h))
+    if SETTINGS.get("outbound_enabled", False):
+        lines.extend(outbound_configs())
+    return lines
+
+
 def status_line(link: dict, h: str) -> str:
     used = int(link.get("used", 0) or 0)
     vol = int(link.get("vol", 0) or 0)
@@ -394,6 +406,7 @@ def enrich(l: dict, h: str) -> dict:
     o["pct"] = min(100, int(l.get("used", 0) / vol * 100)) if vol > 0 else 0
     o["ok"] = allowed(l)
     o["share"] = share(l, h)
+    o["sub_configs"] = subscription_config_lines(l, h)
     o["online"] = sum(1 for c in CONNECTIONS.values() if c.get("uuid") == l["id"])
     # پنل کاربری = همان لینک ساب (مثل پاسارگاد): مرورگر → ظاهر، کلاینت → کانفیگ
     o["user_url"] = f"https://{h}/u/{l['id']}"
@@ -987,6 +1000,7 @@ async def user_page(lid: str, request: Request):
         .replace("{{ONLINE}}", str(d["online"]))
         .replace("{{EXP}}", exp)
         .replace("{{SHARE}}", d["share"])
+        .replace("{{SUB_CONFIGS}}", "\n".join(d.get("sub_configs") or []))
         .replace("{{SUB}}", d["sub_url"])
         .replace("{{QR}}", d["qr_url"])
         .replace("{{REMARK}}", d.get("remark") or "")
@@ -1053,7 +1067,19 @@ async def group_portal(sid: str, request: Request):
     from pages import USER_PORTAL
 
     label = sub.get("name") or "LPRW"
-    share_txt = share(first_lk, h) if first_lk else (lines[0] if lines else "")
+    group_configs = []
+    seen_group_configs = set()
+    async with LLOCK:
+        ids = sub.get("link_ids") or list(LINKS.keys())
+        for i in ids:
+            lk = LINKS.get(i)
+            if not lk or not allowed(lk):
+                continue
+            for cfg in subscription_config_lines(lk, h):
+                if cfg not in seen_group_configs:
+                    seen_group_configs.add(cfg)
+                    group_configs.append(cfg)
+    share_txt = group_configs[0] if group_configs else (share(first_lk, h) if first_lk else "")
     pct = min(100, int(total_used / total_vol * 100)) if total_vol > 0 else 0
     exp = sub.get("exp") or "—"
     if exp and exp != "—":
@@ -1072,6 +1098,7 @@ async def group_portal(sid: str, request: Request):
         .replace("{{ONLINE}}", "—")
         .replace("{{EXP}}", str(exp))
         .replace("{{SHARE}}", share_txt)
+        .replace("{{SUB_CONFIGS}}", "\n".join(group_configs))
         .replace("{{SUB}}", f"https://{h}/g/{sid}")
         .replace("{{QR}}", f"https://{h}/qr/{first_lk['id']}" if first_lk else "")
         .replace("{{REMARK}}", f"{len(lines)//2} کانفیگ")

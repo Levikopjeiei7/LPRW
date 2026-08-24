@@ -388,7 +388,7 @@ async function loadLinks(){
     <td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span> ${l.online?`🟢${l.online}`:''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editLink('${l.id}')">ویرایش</button>
-      <button class="btn btn-sm" onclick="copyText(\`${l.share.replace(/`/g,'')}\`)">کپی</button>
+      <button class="btn btn-sm" onclick="copyText((l.sub_configs||[]).join('\\n'))">کپی کانفیگ‌های ساب</button>
       <button class="btn btn-sm" onclick="copyText('${l.sub_url}')">ساب</button>
       <button class="btn btn-sm btn-d" onclick="delLink('${l.id}')">حذف</button>
     </td>
@@ -620,13 +620,13 @@ body::before{content:"";position:fixed;width:520px;height:520px;top:-100px;right
 <div class="b"><div class="t">آنلاین الان</div><div class="v">{{ONLINE}}</div></div>
 </div></div>
 <div class="grid"><div>
-<div class="card"><h3>🔗 کانفیگ شما</h3>
-<div class="share-box" id="share">{{SHARE}}</div>
-<div class="actions"><button class="btn btn-p" id="copy">کپی کانفیگ</button>
+<div class="card"><h3>کانفیگ‌های ساب</h3>
+<div class="share-box" id="share">{{SUB_CONFIGS}}</div>
+<div class="actions"><button class="btn btn-p" id="copy">کپی تمام کانفیگ‌ها</button>
 <button class="btn" id="copy-sub">کپی لینک ساب</button>
 <a class="btn" href="{{SUB}}" target="_blank">باز کردن ساب</a></div>
 <p style="margin-top:12px;font-size:.8rem;color:var(--mu)">لینک اشتراک: <code style="color:var(--pr)">{{SUB}}</code></p></div>
-<div class="card"><h3>📱 دانلود کلاینت</h3><div class="cli-grid">
+<div class="card"><h3>دانلود کلاینت</h3><div class="cli-grid">
 <a class="cli" href="https://github.com/2dust/v2rayNG/releases" target="_blank" rel="noopener"><div class="cli-n">v2rayNG</div><div class="cli-p">Android</div><div class="cli-a">دانلود</div></a>
 <a class="cli" href="https://github.com/2dust/v2rayN/releases" target="_blank" rel="noopener"><div class="cli-n">v2rayN</div><div class="cli-p">Windows</div><div class="cli-a">دانلود</div></a>
 <a class="cli" href="https://github.com/hiddify/hiddify-app/releases" target="_blank" rel="noopener"><div class="cli-n">Hiddify</div><div class="cli-p">All</div><div class="cli-a">دانلود</div></a>
@@ -636,14 +636,14 @@ body::before{content:"";position:fixed;width:520px;height:520px;top:-100px;right
 <a class="cli" href="https://github.com/MetaCubeX/ClashMetaForAndroid/releases" target="_blank" rel="noopener"><div class="cli-n">Clash Meta</div><div class="cli-p">Desktop</div><div class="cli-a">دانلود</div></a>
 <a class="cli" href="https://apps.apple.com/app/foxray/id6448898396" target="_blank" rel="noopener"><div class="cli-n">FoXray</div><div class="cli-p">iOS</div><div class="cli-a">دانلود</div></a>
 </div></div>
-<div class="card"><h3>📘 راهنمای اتصال</h3>
+<div class="card"><h3>راهنمای اتصال</h3>
 <div class="steps">
 <div class="s"><div class="n">1</div><div>یکی از کلاینت‌های بالا را نصب کنید.</div></div>
 <div class="s"><div class="n">2</div><div>دکمه «کپی کانفیگ» را بزنید یا از QR استفاده کنید.</div></div>
 <div class="s"><div class="n">3</div><div>در کلاینت: Import from clipboard / افزودن از کلیپ‌بورد.</div></div>
 <div class="s"><div class="n">4</div><div>برای چند دستگاه از لینک سابسکریپشن استفاده کنید.</div></div>
 </div></div>
-<div class="card"><h3>🧩 آموزش کلاینت‌ها</h3>
+<div class="card"><h3>آموزش کلاینت‌ها</h3>
 <div class="help-card"><h4>v2rayNG (اندروید)</h4><pre>1. اپ را نصب کنید\n2. روی + بزنید\n3. ورود از کلیپ‌بورد\n4. کانفیگ را وارد کنید\n5. اتصال را روشن کنید</pre></div>
 <div class="help-card"><h4>v2rayN (ویندوز)</h4><pre>1. برنامه را اجرا کنید\n2. Import from clipboard\n3. Set as active server\n4. System proxy = Automatic</pre></div>
 <div class="help-card"><h4>Streisand / V2Box (آیفون)</h4><pre>1. نصب از App Store\n2. Paste لینک یا ساب\n3. افزودن پروفایل و اتصال</pre></div>
@@ -655,12 +655,12 @@ body::before{content:"";position:fixed;width:520px;height:520px;top:-100px;right
 <div class="card" style="text-align:center"><h3>QR Code</h3>
 <img class="qr" src="{{QR}}" alt="QR">
 <p style="margin-top:10px;font-size:.78rem;color:var(--mu)">اسکن با کلاینت موبایل</p></div>
-<div class="card"><h3>ℹ️ جزئیات</h3>
+<div class="card"><h3>جزئیات</h3>
 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">هاست</span><strong>{{HOST}}</strong></div>
 <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)"><span style="color:var(--mu)">نسخه</span><strong>{{VERSION}}</strong></div>
 <div style="display:flex;justify-content:space-between;padding:8px 0"><span style="color:var(--mu)">یادداشت</span><strong>{{REMARK}}</strong></div>
 </div>
-<div class="card"><h3>💡 نکات سرعت</h3>
+<div class="card"><h3>نکات سرعت</h3>
 <ul style="padding-right:18px;color:var(--mu);font-size:.85rem">
 <li>کلاینت را به‌روز نگه دارید.</li>
 <li>از اینترنت پایدار تست کنید.</li>
@@ -676,7 +676,7 @@ const toast=m=>{const t=document.getElementById('toast');t.textContent=m;t.class
 const apply=t=>{document.documentElement.setAttribute('data-theme',t);localStorage.setItem('lprw_user_theme',t)};
 apply(localStorage.getItem('lprw_user_theme')||'dark');
 document.getElementById('theme').onclick=()=>{const n=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';apply(n);toast(n==='dark'?'حالت شب':'حالت روز')};
-document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(document.getElementById('share').textContent).then(()=>toast('کانفیگ کپی شد'));
+document.getElementById('copy').onclick=()=>navigator.clipboard.writeText(document.getElementById('share').textContent.trim()).then(()=>toast('تمام کانفیگ‌ها کپی شد'));
 document.getElementById('copy-sub').onclick=()=>navigator.clipboard.writeText('{{SUB}}').then(()=>toast('لینک ساب کپی شد'));
 </script></body></html>
 '''
