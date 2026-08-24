@@ -31,7 +31,7 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 ::-webkit-scrollbar{width:7px}::-webkit-scrollbar-thumb{background:rgba(129,140,248,.3);border-radius:99px}
 
 #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;z-index:2}
-.login-card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--bd2);border-radius:24px;padding:40px 32px;box-shadow:var(--shadow)}
+.login-card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--bd2);border-radius:24px;padding:40px 32px;box-shadow:var(--shadow)}.login-logo-img{display:block;width:92px;height:92px;object-fit:cover;border-radius:22px;margin:0 auto 18px;box-shadow:0 18px 45px rgba(99,102,241,.25);border:1px solid var(--bd2)}
 .login-card h1{font-size:1.7rem;font-weight:800;margin-bottom:6px}
 .login-card .sub{color:var(--mu);margin-bottom:24px;font-size:.9rem}
 .field{margin-bottom:14px}
@@ -72,7 +72,7 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 
 .side-bottom{margin-top:auto;padding-top:14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px}
 .main{padding:20px 24px 40px;max-width:1280px}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap}.top-brand{display:flex;align-items:center;gap:10px;margin-right:auto;margin-left:18px}.top-brand img{width:42px;height:42px;border-radius:12px;object-fit:cover;border:1px solid var(--bd2);box-shadow:0 8px 25px rgba(99,102,241,.18)}.top-brand div{display:flex;flex-direction:column;line-height:1.2}.top-brand b{font-size:.86rem}.top-brand small{color:var(--mu);font-size:.68rem;margin-top:3px}
 .topbar h1{font-size:1.35rem;font-weight:800}
 .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px;max-width:760px}
 @media(max-width:560px){.kpis{grid-template-columns:1fr}}
@@ -186,7 +186,7 @@ button:active,.btn:active{transform:translateY(0) scale(.98)}
   </aside>
   
 <main class="main">
-    <div class="topbar"><h1 id="page-title">داشبورد</h1><div class="acts" id="top-acts"></div></div>
+    <div class="topbar"><h1 id="page-title">داشبورد</h1><div class="top-brand"><img src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW Logo"><div><b id="top-name">LPRW</b><small id="top-ver">v4.11</small></div></div><div class="acts" id="top-acts"></div></div>
 
     <section id="pg-home">
       <div class="dashboard-hero">
