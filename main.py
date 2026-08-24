@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.10.0"
+VERSION = "4.12.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -131,6 +131,7 @@ ACT: deque = deque(maxlen=500)
 HOURLY: dict = defaultdict(int)
 SETTINGS = {
     "panel_name": os.environ.get("PANEL_NAME", "LPRW"),
+    "admin_user": ADMIN_USER,
     "announce": "",
     "support_url": "",
     "outbound_enabled": False,
@@ -168,7 +169,7 @@ def allowed(l: Optional[dict]) -> bool:
 
 
 async def load():
-    global _admin
+    global _admin, ADMIN_USER
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         if not DATA_FILE.exists():
@@ -195,6 +196,8 @@ async def load():
             _admin = d["ah"]
         if "settings" in d:
             SETTINGS.update(d["settings"])
+        if SETTINGS.get("admin_user"):
+            ADMIN_USER = str(SETTINGS["admin_user"]).strip() or ADMIN_USER
         STATS["bytes"] = d.get("bytes", 0)
         STATS["reqs"] = d.get("reqs", 0)
         log.info("loaded %s links %s subs %s inbounds", len(LINKS), len(SUBS), len(INBOUNDS))
@@ -469,7 +472,7 @@ def unreg_conn(cid: str):
 # ── models ───────────────────────────────────────────────────────────────────
 
 class LoginIn(BaseModel):
-    username: str = "admin"
+    username: str = ""
     password: str
 
 
@@ -518,6 +521,7 @@ class SubPatch(BaseModel):
 
 class SettingsIn(BaseModel):
     panel_name: Optional[str] = None
+    admin_user: Optional[str] = Field(default=None, min_length=1, max_length=80)
     announce: Optional[str] = None
     support_url: Optional[str] = None
 
@@ -885,7 +889,15 @@ async def get_set(_: bool = Depends(auth)):
 
 @app.post("/api/settings")
 async def set_set(body: SettingsIn, _: bool = Depends(auth)):
-    SETTINGS.update(body.model_dump(exclude_none=True))
+    global ADMIN_USER
+    data = body.model_dump(exclude_none=True)
+    if "admin_user" in data:
+        new_user = str(data["admin_user"]).strip()
+        if not new_user:
+            raise HTTPException(400, "username cannot be empty")
+        ADMIN_USER = new_user
+        data["admin_user"] = new_user
+    SETTINGS.update(data)
     await schedule_save()
     return {"ok": True, "settings": SETTINGS}
 

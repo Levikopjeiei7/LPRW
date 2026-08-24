@@ -32,7 +32,7 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 
 #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;z-index:2}
 .login-card{width:100%;max-width:420px;background:var(--card);border:1px solid var(--bd2);border-radius:24px;padding:40px 32px;box-shadow:var(--shadow)}.login-logo-img{display:block;width:92px;height:92px;object-fit:cover;border-radius:22px;margin:0 auto 18px;box-shadow:0 18px 45px rgba(99,102,241,.25);border:1px solid var(--bd2)}
-.login-card h1{font-size:1.7rem;font-weight:800;margin-bottom:6px}
+.login-logo-wrap{display:flex;flex-direction:column;align-items:center;margin-bottom:18px}.login-logo-wrap img{width:96px;height:96px;object-fit:cover;border-radius:24px;border:1px solid var(--bd2);box-shadow:0 18px 50px rgba(99,102,241,.28)}.login-version{margin-top:9px;color:var(--mu);font-size:.72rem;font-weight:700;letter-spacing:.02em}.github-login{position:absolute;top:20px;right:20px;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1px solid var(--bd2);color:var(--tx);transition:.18s;box-shadow:0 10px 30px rgba(0,0,0,.18)}.github-login:hover{transform:translateY(-2px);background:rgba(99,102,241,.12);border-color:rgba(129,140,248,.35)}.github-login svg{width:24px;height:24px;fill:currentColor}.login-card h1{font-size:1.7rem;font-weight:800;margin-bottom:6px}
 .login-card .sub{color:var(--mu);margin-bottom:24px;font-size:.9rem}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:.78rem;color:var(--mu);margin-bottom:6px;font-weight:600}
@@ -157,11 +157,14 @@ button:active,.btn:active{transform:translateY(0) scale(.98)}
 </head>
 <body>
 <div id="login">
+  <a class="github-login" href="https://github.com/danesh1118/LPRW" target="_blank" rel="noopener noreferrer" aria-label="GitHub LPRW">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.2.09 1.84 1.23 1.84 1.23 1.07 1.83 2.8 1.3 3.48.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.23a11.45 11.45 0 0 1 6-.01c2.3-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.87.12 3.17.77.84 1.23 1.91 1.23 3.22 0 4.62-2.81 5.64-5.49 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z"/></svg>
+  </a>
   <div class="login-card">
-    <div class="brand-mark" aria-label="LPRW"><span>L</span><i></i></div>
+    <div class="login-logo-wrap"><img src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW Logo"><span class="login-version">نسخه پنل v4.12.0</span></div>
     <h1>ورود به پنل</h1>
     <p class="sub">LPRW · مدیریت پروکسی</p>
-    <div class="field"><label>نام کاربری</label><input id="lu" value="admin" autocomplete="username"></div>
+    <div class="field"><label>نام کاربری</label><input id="lu" value="" placeholder="نام کاربری را وارد کنید" autocomplete="username"></div>
     <div class="field"><label>رمز عبور</label><input id="lp" type="password" autocomplete="current-password"></div>
     <button class="btn btn-p btn-block" onclick="doLogin()">ورود</button>
     <div class="err" id="login-err"></div>
@@ -271,6 +274,7 @@ hysteria2://..."></textarea></div>
       <div class="panel">
         <div class="panel-h"><h3>تنظیمات</h3></div>
         <div class="field"><label>نام پنل</label><input id="s-name"></div>
+        <div class="field"><label>نام کاربری ورود</label><input id="s-user" autocomplete="username" placeholder="نام کاربری جدید"></div>
         <div class="field"><label>اعلان</label><input id="s-announce"></div>
         <div class="field"><label>لینک پشتیبانی</label><input id="s-support"></div>
         <button class="btn btn-p" onclick="saveSettings()">ذخیره</button>
@@ -401,6 +405,8 @@ async function refresh(){
     const me=await api('/api/me');
     $('#side-name').textContent=me.name||'LPRW';
     $('#side-ver').textContent='v'+me.version;
+    $('#top-name').textContent=me.name||'LPRW';
+    $('#top-ver').textContent='v'+me.version;
     await loadStats();
     await loadInbounds();
   }catch(e){showLogin()}
@@ -518,6 +524,7 @@ function addOutboundSample(){
 async function loadSettings(){
   const s=await api('/api/settings');
   $('#s-name').value=s.panel_name||'';
+  $('#s-user').value=s.admin_user||'';
   $('#s-announce').value=s.announce||'';
   $('#s-support').value=s.support_url||'';
 }
@@ -612,7 +619,7 @@ async function delLink(id){if(!confirm('حذف؟'))return;await api('/api/links/
 async function delIb(id){if(!confirm('حذف اینباند؟'))return;await api('/api/inbounds/'+id,{method:'DELETE'});loadInbounds()}
 async function delSub(id){if(!confirm('حذف؟'))return;await api('/api/subs/'+id,{method:'DELETE'});loadSubs()}
 async function saveSettings(){
-  await api('/api/settings',{method:'POST',body:JSON.stringify({panel_name:$('#s-name').value,announce:$('#s-announce').value,support_url:$('#s-support').value})});
+  await api('/api/settings',{method:'POST',body:JSON.stringify({panel_name:$('#s-name').value,admin_user:$('#s-user').value.trim(),announce:$('#s-announce').value,support_url:$('#s-support').value})});
   toast('ذخیره شد');
 }
 async function chgPw(){
