@@ -57,6 +57,8 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;color:var(--mu);cursor:pointer;font-weight:600;font-size:.88rem;border:1px solid transparent}
 .nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}
 .nav-item.active{background:rgba(99,102,241,.14);color:var(--pr2);border-color:rgba(99,102,241,.22)}
+.nav-item .nav-ico{width:20px;height:20px;display:grid;place-items:center;flex:0 0 20px;color:currentColor;opacity:.9}.nav-item .nav-ico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.xray-status{display:inline-flex;align-items:center;gap:8px;font-weight:800}.xray-dot{width:8px;height:8px;border-radius:50%;display:inline-block;box-shadow:0 0 10px currentColor}.xray-ok{color:#22c77a}.xray-mid{color:#fbbf24}.xray-bad{color:#ff4d62}.hero-metric.status-metric{border-color:rgba(255,255,255,.1)}.dashboard-stat .icon svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
 .brand-mark{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 10px 28px rgba(99,102,241,.28);overflow:hidden;color:#fff;font-weight:900;font-size:1.15rem}
 .brand-mark:before{content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.42);border-radius:9px;transform:rotate(45deg)}
 .brand-mark span{position:relative;z-index:2;font-family:ui-sans-serif,system-ui}
@@ -175,13 +177,13 @@ button:active,.btn:active{transform:translateY(0) scale(.98)}
 <div class="shell">
   <aside class="side">
     <div class="logo"><div class="brand-mark" aria-label="LPRW"><span>L</span><i></i></div><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
-    <div class="nav-item active" data-page="home" onclick="go('home')">⌂&nbsp;&nbsp; داشبورد</div>
-    <div class="nav-item" data-page="links" onclick="go('links')">🔗&nbsp;&nbsp; لینک‌ها</div>
-    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">◈&nbsp;&nbsp; پروتکل و اینباند</div>
-    <div class="nav-item" data-page="outbound" onclick="go('outbound')">⇥&nbsp;&nbsp; اوتباند</div>
-    <div class="nav-item" data-page="subs" onclick="go('subs')">☷&nbsp;&nbsp; سابسکریپشن</div>
-    <div class="nav-item" data-page="online" onclick="go('online')">●&nbsp;&nbsp; آنلاین</div>
-    <div class="nav-item" data-page="settings" onclick="go('settings')">⚙&nbsp;&nbsp; تنظیمات</div>
+    <div class="nav-item active" data-page="home" onclick="go('home')"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></svg></span>داشبورد</div>
+    <div class="nav-item" data-page="links" onclick="go('links')"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.2-1.2"/></svg></span>لینک‌ها</div>
+    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5M8 17h3"/></svg></span>پروتکل و اینباند</div>
+    <div class="nav-item" data-page="outbound" onclick="go('outbound')"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 12h13"/><path d="m13 6 6 6-6 6"/><path d="M5 5v4M5 15v4"/></svg></span>اوتباند</div>
+    <div class="nav-item" data-page="subs" onclick="go('subs')"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></span>سابسکریپشن</div>
+    <div class="nav-item" data-page="online" onclick="go('online')"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg></span>آنلاین</div>
+    <div class="nav-item" data-page="settings" onclick="go('settings')"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/><path d="m5.6 5.6 2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span>تنظیمات</div>
     <div class="side-bottom">
       <button class="btn btn-sm" onclick="toggleTheme()">تم</button>
       <button class="btn btn-sm btn-d" onclick="doLogout()">خروج</button>
@@ -199,17 +201,17 @@ button:active,.btn:active{transform:translateY(0) scale(.98)}
         </div>
         <div class="hero-metrics">
           <div class="hero-metric"><b id="hero-reqs">0</b><span>درخواست‌ها</span></div>
-          <div class="hero-metric"><b id="hero-subs">0</b><span>سابسکریپشن</span></div>
+          <div class="hero-metric status-metric"><b id="hero-xray"><span class="xray-status xray-ok"><i class="xray-dot"></i>عادی</span></b><span>وضعیت Xray</span></div>
           <div class="hero-metric"><b id="hero-inbounds">0</b><span>اینباند</span></div>
           <div class="hero-metric"><b id="hero-status">پایدار</b><span>وضعیت سرویس</span></div>
         </div>
       </div>
       <div class="dashboard-grid">
-        <div class="dashboard-stat stat-orange"><div class="icon">↕</div><div class="label">ترافیک کل</div><div class="value" id="k-bytes">—</div></div>
-        <div class="dashboard-stat stat-green"><div class="icon">●</div><div class="label">آنلاین</div><div class="value" id="k-online">0</div></div>
-        <div class="dashboard-stat stat-purple"><div class="icon">↗</div><div class="label">لینک فعال</div><div class="value" id="k-links">0</div></div>
-        <div class="dashboard-stat stat-gray"><div class="icon">◷</div><div class="label">آپتایم</div><div class="value" id="k-up">—</div></div>
-        <div class="dashboard-stat stat-red"><div class="icon">!</div><div class="label">لینک‌های غیر فعال</div><div class="value" id="k-inactive">0</div></div>
+        <div class="dashboard-stat stat-orange"><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 4v16M7 9l5-5 5 5M7 15l5 5 5-5"/></svg></div><div class="label">ترافیک کل</div><div class="value" id="k-bytes">—</div></div>
+        <div class="dashboard-stat stat-green"><div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 8v4l3 2"/></svg></div><div class="label">آنلاین</div><div class="value" id="k-online">0</div></div>
+        <div class="dashboard-stat stat-purple"><div class="icon"><svg viewBox="0 0 24 24"><path d="M5 17 17 5M9 5h8v8"/><path d="M5 5h3"/></svg></div><div class="label">لینک فعال</div><div class="value" id="k-links">0</div></div>
+        <div class="dashboard-stat stat-gray"><div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg></div><div class="label">آپتایم</div><div class="value" id="k-up">—</div></div>
+        <div class="dashboard-stat stat-red"><div class="icon"><svg viewBox="0 0 24 24"><path d="M12 4 21 20H3L12 4Z"/><path d="M12 9v5M12 17h.01"/></svg></div><div class="label">لینک‌های غیر فعال</div><div class="value" id="k-inactive">0</div></div>
       </div>
       <div class="dashboard-two">
         <div class="panel chart-card"><div class="panel-h"><h3>ترافیک ساعتی</h3><div class="chart-toolbar"><span class="live-dot"></span><span style="color:var(--muted);font-size:.72rem">زنده · ۲۴ ساعت اخیر</span></div></div><div class="chart-box"><canvas id="chart"></canvas></div></div>
@@ -420,7 +422,9 @@ async function loadStats(){
   $('#k-up').textContent=s.uptime_h;
   $('#k-inactive').textContent=Math.max(0,(s.links||0)-(s.active_links||0));
   $('#hero-reqs').textContent=(s.reqs||0).toLocaleString('fa-IR');
-  $('#hero-subs').textContent=(s.subs||0).toLocaleString('fa-IR');
+  const xs=await api('/api/xray-status');
+  const cls=xs.level==='ok'?'xray-ok':(xs.level==='medium'?'xray-mid':'xray-bad');
+  $('#hero-xray').innerHTML=`<span class="xray-status ${cls}"><i class="xray-dot"></i>${xs.label}</span>`;
   $('#hero-inbounds').textContent=(s.inbounds||0).toLocaleString('fa-IR');
   $('#hero-status').textContent='پایدار';
   const grid=$('#online-grid');

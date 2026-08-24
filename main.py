@@ -13,6 +13,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import secrets
 import time
 import uuid as uuidlib
@@ -644,6 +645,34 @@ async def stats(request: Request, _: bool = Depends(auth)):
             for k, v in list(CONNECTIONS.items())[:50]
         ],
     }
+
+
+@app.get("/api/xray-status")
+async def xray_status(_: bool = Depends(auth)):
+    """Return the live Xray process state in three dashboard-friendly levels."""
+    try:
+        xray_bin = shutil.which("xray")
+        if not xray_bin:
+            return {"level": "bad", "label": "قطع", "running": False, "reason": "xray binary not found"}
+        running = False
+        try:
+            proc = await asyncio.create_subprocess_exec("pgrep", "-x", "xray", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            await proc.communicate()
+            running = proc.returncode == 0
+        except Exception:
+            # Portable fallback: inspect the process list without shell evaluation.
+            proc = await asyncio.create_subprocess_exec("ps", "-eo", "comm=", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+            out, _ = await proc.communicate()
+            running = any(line.strip() == "xray" for line in out.decode(errors="ignore").splitlines())
+        if not running:
+            return {"level": "bad", "label": "قطع", "running": False}
+        # A running process is normal; if the local API has active connections,
+        # show a stronger health signal. Otherwise keep the state conservative.
+        level = "ok" if len(CONNECTIONS) > 0 or len(INBOUNDS) > 0 else "medium"
+        label = "عادی" if level == "ok" else "متوسط"
+        return {"level": level, "label": label, "running": True, "connections": len(CONNECTIONS), "inbounds": len(INBOUNDS)}
+    except Exception as e:
+        return {"level": "bad", "label": "قطع", "running": False, "reason": str(e)}
 
 
 @app.get("/api/activity")
