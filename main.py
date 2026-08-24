@@ -36,7 +36,7 @@ from protocol.shadowsocks import handle_ss_ws
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("LPRW")
 
-VERSION = "4.8.3"
+VERSION = "4.9.0"
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 DATA_FILE = DATA_DIR / "lprw.json"
 SECRET_FILE = DATA_DIR / ".secret"
@@ -133,6 +133,10 @@ SETTINGS = {
     "panel_name": os.environ.get("PANEL_NAME", "LPRW"),
     "announce": "",
     "support_url": "",
+    "outbound_enabled": False,
+    "outbound_remove_primary": False,
+    "outbound_remove_status": False,
+    "outbound_configs": [],
 }
 LLOCK = asyncio.Lock()
 SLOCK = asyncio.Lock()
@@ -336,6 +340,32 @@ def share(link: dict, h: Optional[str] = None) -> str:
     return f"vless://{uid}@{h}:443?{q}#{lab}"
 
 
+def outbound_configs() -> list[str]:
+    raw = SETTINGS.get("outbound_configs") or []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    seen = set()
+    for item in raw:
+        v = str(item or "").strip()
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
+
+def subscription_lines(lk: dict, h: str) -> list[str]:
+    lines = []
+    if not SETTINGS.get("outbound_remove_status", False):
+        lines.append(status_line(lk, h))
+    if not SETTINGS.get("outbound_remove_primary", False):
+        lines.append(share(lk, h))
+    if SETTINGS.get("outbound_enabled", False):
+        lines.extend(outbound_configs())
+    return lines
+
+
 def status_line(link: dict, h: str) -> str:
     used = int(link.get("used", 0) or 0)
     vol = int(link.get("vol", 0) or 0)
@@ -349,7 +379,7 @@ def status_line(link: dict, h: str) -> str:
         except Exception:
             days = str(exp)[:10]
     label = link.get("label") or "LPRW"
-    remark = quote(f"📊 {label} | باقیمانده {left_h} | {days}")
+    remark = quote(f"{label} | باقیمانده {left_h} | {days}")
     return (
         f"vless://00000000-0000-0000-0000-000000000001@127.0.0.1:80"
         f"?encryption=none&security=none&type=tcp&headerType=none#{remark}"
@@ -472,6 +502,13 @@ class SettingsIn(BaseModel):
     panel_name: Optional[str] = None
     announce: Optional[str] = None
     support_url: Optional[str] = None
+
+
+class OutboundIn(BaseModel):
+    enabled: bool
+    remove_primary: bool = False
+    remove_status: bool = False
+    configs: list[str] = Field(default_factory=list, max_length=1000)
 
 
 class PasswordIn(BaseModel):
@@ -794,6 +831,35 @@ async def del_sub(sid: str, _: bool = Depends(auth)):
     return {"ok": True}
 
 
+@app.get("/api/outbound")
+async def get_outbound(_: bool = Depends(auth)):
+    return {
+        "enabled": bool(SETTINGS.get("outbound_enabled", False)),
+        "remove_primary": bool(SETTINGS.get("outbound_remove_primary", False)),
+        "remove_status": bool(SETTINGS.get("outbound_remove_status", False)),
+        "configs": outbound_configs(),
+    }
+
+
+@app.post("/api/outbound")
+async def set_outbound(body: OutboundIn, _: bool = Depends(auth)):
+    cleaned = []
+    seen = set()
+    for raw in body.configs:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        cleaned.append(value)
+    SETTINGS["outbound_enabled"] = bool(body.enabled)
+    SETTINGS["outbound_remove_primary"] = bool(body.remove_primary)
+    SETTINGS["outbound_remove_status"] = bool(body.remove_status)
+    SETTINGS["outbound_configs"] = cleaned
+    await schedule_save()
+    act("outbound settings updated", "ok")
+    return {"ok": True, **(await get_outbound(True))}
+
+
 @app.get("/api/settings")
 async def get_set(_: bool = Depends(auth)):
     return SETTINGS
@@ -864,7 +930,7 @@ def _wants_html(request: Request) -> bool:
 
 
 def _sub_response_for_link(lk: dict, h: str) -> Response:
-    lines = [status_line(lk, h), share(lk, h)]
+    lines = subscription_lines(lk, h)
     used = lk.get("used", 0)
     total = lk.get("vol", 0)
     exp = lk.get("exp")
@@ -875,6 +941,8 @@ def _sub_response_for_link(lk: dict, h: str) -> Response:
             expire_ts = int(datetime.fromisoformat(exp).timestamp())
         except Exception:
             expire_ts = 0
+    if not lines:
+        raise HTTPException(404, "no configs")
     content = base64.b64encode("\n".join(lines).encode()).decode()
     title_b64 = base64.b64encode(label.encode()).decode()
     return Response(
@@ -956,8 +1024,7 @@ async def group_portal(sid: str, request: Request):
                 if lk and allowed(lk):
                     if first_lk is None:
                         first_lk = lk
-                    lines.append(status_line(lk, h))
-                    lines.append(share(lk, h))
+                    lines.extend(subscription_lines(lk, h))
                     total_used += int(lk.get("used", 0) or 0)
                     total_vol += int(lk.get("vol", 0) or 0)
 
@@ -986,7 +1053,7 @@ async def group_portal(sid: str, request: Request):
     from pages import USER_PORTAL
 
     label = sub.get("name") or "LPRW"
-    share_txt = lines[1] if len(lines) > 1 else ""
+    share_txt = share(first_lk, h) if first_lk else (lines[0] if lines else "")
     pct = min(100, int(total_used / total_vol * 100)) if total_vol > 0 else 0
     exp = sub.get("exp") or "—"
     if exp and exp != "—":

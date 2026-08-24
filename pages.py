@@ -57,6 +57,19 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;color:var(--mu);cursor:pointer;font-weight:600;font-size:.88rem;border:1px solid transparent}
 .nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}
 .nav-item.active{background:rgba(99,102,241,.14);color:var(--pr2);border-color:rgba(99,102,241,.22)}
+.brand-mark{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 10px 28px rgba(99,102,241,.28);overflow:hidden;color:#fff;font-weight:900;font-size:1.15rem}
+.brand-mark:before{content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.42);border-radius:9px;transform:rotate(45deg)}
+.brand-mark span{position:relative;z-index:2;font-family:ui-sans-serif,system-ui}
+.brand-mark i{position:absolute;width:18px;height:3px;background:rgba(255,255,255,.85);border-radius:99px;bottom:9px;right:7px;transform:rotate(-45deg)}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px 0;border-bottom:1px solid var(--bd);cursor:pointer}
+.switch-row:last-child{border-bottom:0}
+.switch-row span{display:flex;flex-direction:column;gap:3px}.switch-row small{color:var(--mu);font-size:.76rem;font-weight:400}
+.switch-row input{appearance:none;width:48px;height:26px;border-radius:99px;background:var(--mu2);position:relative;cursor:pointer;transition:.2s;flex:0 0 auto}
+.switch-row input:before{content:"";position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:3px;right:25px;transition:.2s;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.switch-row input:checked{background:var(--pr)}.switch-row input:checked:before{right:3px}
+.actions-row{display:flex;gap:8px;flex-wrap:wrap}.outbound-preview{display:grid;gap:8px}.preview-row{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;background:rgba(99,102,241,.06);border:1px solid var(--bd);border-radius:12px}.preview-row span{color:var(--mu)}
+.chip-ok{color:var(--ok);border-color:rgba(52,211,153,.25);background:rgba(52,211,153,.08)}
+
 .side-bottom{margin-top:auto;padding-top:14px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px}
 .main{padding:20px 24px 40px;max-width:1280px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap}
@@ -103,7 +116,7 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 <body>
 <div id="login">
   <div class="login-card">
-    <img src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="56" height="56" style="border-radius:14px;margin-bottom:16px;display:block;border:2px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(99,102,241,.4)">
+    <div class="brand-mark" aria-label="LPRW"><span>L</span><i></i></div>
     <h1>ورود به پنل</h1>
     <p class="sub">LPRW · مدیریت پروکسی</p>
     <div class="field"><label>نام کاربری</label><input id="lu" value="admin" autocomplete="username"></div>
@@ -116,15 +129,16 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
 <div id="app">
 <div class="shell">
   <aside class="side">
-    <div class="logo"><img class="mk" src="https://avatars.githubusercontent.com/u/316735646?v=4" alt="LPRW" width="38" height="38" style="object-fit:cover;border-radius:11px;border:1px solid rgba(255,255,255,.1)"><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
-    <div class="nav-item active" data-page="home" onclick="go('home')">🏠 داشبورد</div>
-    <div class="nav-item" data-page="links" onclick="go('links')">🔗 لینک‌ها</div>
-    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">📡 پروتکل و اینباند</div>
-    <div class="nav-item" data-page="subs" onclick="go('subs')">📋 سابسکریپشن</div>
-    <div class="nav-item" data-page="online" onclick="go('online')">🟢 آنلاین</div>
-    <div class="nav-item" data-page="settings" onclick="go('settings')">⚙️ تنظیمات</div>
+    <div class="logo"><div class="brand-mark" aria-label="LPRW"><span>L</span><i></i></div><div><h2 id="side-name">LPRW</h2><small id="side-ver">v4</small></div></div>
+    <div class="nav-item active" data-page="home" onclick="go('home')">داشبورد</div>
+    <div class="nav-item" data-page="links" onclick="go('links')">لینک‌ها</div>
+    <div class="nav-item" data-page="inbounds" onclick="go('inbounds')">پروتکل و اینباند</div>
+    <div class="nav-item" data-page="outbound" onclick="go('outbound')">اوتباند</div>
+    <div class="nav-item" data-page="subs" onclick="go('subs')">سابسکریپشن</div>
+    <div class="nav-item" data-page="online" onclick="go('online')">آنلاین</div>
+    <div class="nav-item" data-page="settings" onclick="go('settings')">تنظیمات</div>
     <div class="side-bottom">
-      <button class="btn btn-sm" onclick="toggleTheme()">🌓 تم</button>
+      <button class="btn btn-sm" onclick="toggleTheme()">تم</button>
       <button class="btn btn-sm btn-d" onclick="doLogout()">خروج</button>
     </div>
   </aside>
@@ -158,6 +172,31 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
       </div>
     </section>
 
+    <section id="pg-outbound" class="hidden">
+      <div class="panel">
+        <div class="panel-h"><h3>اوتباند</h3><span class="chip" id="ob-state">غیرفعال</span></div>
+        <p style="color:var(--mu);font-size:.84rem;margin-bottom:16px">مدیریت کانفیگ‌هایی که به سابسکریپشن اضافه می‌شوند و کنترل نمایش کانفیگ اصلی پنل.</p>
+        <div class="outbound-settings">
+          <label class="switch-row"><span><b>حذف کانفیگ اصلی پنل از ساب</b><small>وقتی فعال باشد، لینک اصلی VLESS/WS این پنل در ساب نمایش داده نمی‌شود.</small></span><input id="ob-remove-primary" type="checkbox"></label>
+          <label class="switch-row"><span><b>حذف کانفیگ نمایش حجم و زمان</b><small>وقتی فعال باشد، خط وضعیت مصرف و زمان از ساب حذف می‌شود.</small></span><input id="ob-remove-status" type="checkbox"></label>
+          <label class="switch-row"><span><b>فعال سازی کانفیگ اوتباند</b><small>کانفیگ‌های رایگان، VPS یا پنل‌های دیگر را به ساب اضافه می‌کند.</small></span><input id="ob-enabled" type="checkbox" onchange="toggleOutboundEditor()"></label>
+        </div>
+        <div id="ob-editor" class="hidden" style="margin-top:16px">
+          <div class="field"><label>کانفیگ‌های اوتباند</label><textarea id="ob-configs" rows="10" placeholder="هر کانفیگ در یک خط
+ss://...
+vless://...
+trojan://...
+hysteria2://..."></textarea></div>
+          <div class="actions-row"><button class="btn btn-p" onclick="saveOutbound()">ذخیره تنظیمات اوتباند</button><button class="btn" onclick="addOutboundSample()">افزودن نمونه</button></div>
+          <p style="color:var(--mu);font-size:.75rem;margin-top:8px">هر URI معتبر را می‌توان وارد کرد. محدودیتی برای نوع پروتکل در پنل اعمال نمی‌شود.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h"><h3>وضعیت خروجی ساب</h3></div>
+        <div id="ob-preview" class="outbound-preview"></div>
+      </div>
+    </section>
+
     <section id="pg-subs" class="hidden">
       <div class="panel">
         <div class="panel-h"><h3>سابسکریپشن گروهی</h3><button class="btn btn-p btn-sm" onclick="openSubModal()">+ ساب جدید</button></div>
@@ -188,11 +227,12 @@ code{font-family:ui-monospace,monospace;font-size:.76rem;color:var(--pr2);word-b
   </main>
 </div>
 <nav class="bottom-nav">
-  <button class="active" data-page="home" onclick="go('home')"><span>🏠</span>خانه</button>
-  <button data-page="links" onclick="go('links')"><span>🔗</span>لینک</button>
-  <button data-page="inbounds" onclick="go('inbounds')"><span>📡</span>اینباند</button>
-  <button data-page="online" onclick="go('online')"><span>🟢</span>آنلاین</button>
-  <button data-page="settings" onclick="go('settings')"><span>⚙️</span>تنظیمات</button>
+  <button class="active" data-page="home" onclick="go('home')">خانه</button>
+  <button data-page="links" onclick="go('links')">لینک</button>
+  <button data-page="inbounds" onclick="go('inbounds')">اینباند</button>
+  <button data-page="outbound" onclick="go('outbound')">اوتباند</button>
+  <button data-page="online" onclick="go('online')">آنلاین</button>
+  <button data-page="settings" onclick="go('settings')">تنظیمات</button>
 </nav>
 </div>
 
@@ -286,10 +326,11 @@ function go(p){
   $$('[id^=pg-]').forEach(el=>el.classList.add('hidden'));
   const sec=$('#pg-'+p);if(sec)sec.classList.remove('hidden');
   $$('.nav-item,.bottom-nav button').forEach(el=>el.classList.toggle('active',el.dataset.page===p));
-  const titles={home:'داشبورد',links:'لینک‌ها',inbounds:'پروتکل و اینباند',subs:'سابسکریپشن',online:'آنلاین',settings:'تنظیمات'};
+  const titles={home:'داشبورد',links:'لینک‌ها',inbounds:'پروتکل و اینباند',outbound:'اوتباند',subs:'سابسکریپشن',online:'آنلاین',settings:'تنظیمات'};
   $('#page-title').textContent=titles[p]||p;
   if(p==='links')loadLinks();
   if(p==='inbounds')loadInbounds();
+  if(p==='outbound')loadOutbound();
   if(p==='subs')loadSubs();
   if(p==='online')loadStats();
   if(p==='settings')loadSettings();
@@ -367,6 +408,45 @@ async function loadSubs(){
       <button class="btn btn-sm btn-d" onclick="delSub('${s.id}')">حذف</button>
     </td>
   </tr>`).join('')||'<tr><td colspan="4" class="empty">سابی نیست</td></tr>';
+}
+
+async function loadOutbound(){
+  const o=await api('/api/outbound');
+  $('#ob-enabled').checked=!!o.enabled;
+  $('#ob-remove-primary').checked=!!o.remove_primary;
+  $('#ob-remove-status').checked=!!o.remove_status;
+  $('#ob-configs').value=(o.configs||[]).join('\n');
+  toggleOutboundEditor();
+  renderOutboundPreview(o);
+}
+
+function toggleOutboundEditor(){
+  $('#ob-editor').classList.toggle('hidden', !$('#ob-enabled').checked);
+  renderOutboundPreview({enabled:$('#ob-enabled').checked,remove_primary:$('#ob-remove-primary').checked,remove_status:$('#ob-remove-status').checked,configs:$('#ob-configs').value.split('\n').map(x=>x.trim()).filter(Boolean)});
+}
+
+function renderOutboundPreview(o){
+  const state=$('#ob-state');
+  state.textContent=o.enabled?'فعال':'غیرفعال';
+  state.className='chip '+(o.enabled?'chip-ok':'');
+  const rows=[];
+  rows.push(`<div class="preview-row"><span>کانفیگ اصلی پنل</span><b>${o.remove_primary?'حذف از ساب':'نمایش در ساب'}</b></div>`);
+  rows.push(`<div class="preview-row"><span>حجم و زمان</span><b>${o.remove_status?'حذف از ساب':'نمایش در ساب'}</b></div>`);
+  rows.push(`<div class="preview-row"><span>کانفیگ‌های اوتباند</span><b>${o.enabled?((o.configs||[]).length+' مورد'):'غیرفعال'}</b></div>`);
+  $('#ob-preview').innerHTML=rows.join('');
+}
+
+async function saveOutbound(){
+  const configs=$('#ob-configs').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  await api('/api/outbound',{method:'POST',body:JSON.stringify({enabled:$('#ob-enabled').checked,remove_primary:$('#ob-remove-primary').checked,remove_status:$('#ob-remove-status').checked,configs})});
+  toast('تنظیمات اوتباند ذخیره شد');
+  await loadOutbound();
+}
+
+function addOutboundSample(){
+  const sample='vless://UUID@host:443?encryption=none&security=tls&type=ws&host=host&path=%2Fws&sni=host#Outbound';
+  const box=$('#ob-configs');
+  box.value=box.value.trim()?box.value.trim()+'\n'+sample:sample;
 }
 
 async function loadSettings(){
