@@ -57,7 +57,7 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 .nav-item{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:11px;color:var(--mu);cursor:pointer;font-weight:600;font-size:.88rem;border:1px solid transparent}
 .nav-item:hover{background:rgba(99,102,241,.08);color:var(--tx)}
 .nav-item.active{background:rgba(99,102,241,.14);color:var(--pr2);border-color:rgba(99,102,241,.22)}
-.nav-item .nav-ico{width:20px;height:20px;display:grid;place-items:center;flex:0 0 20px;color:currentColor;opacity:.9}.nav-item .nav-ico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.xray-status{display:inline-flex;align-items:center;gap:8px;font-weight:800}.xray-dot{width:8px;height:8px;border-radius:50%;display:inline-block;box-shadow:0 0 10px currentColor}.xray-ok{color:#22c77a}.xray-mid{color:#fbbf24}.xray-bad{color:#ff4d62}.hero-metric.status-metric{border-color:rgba(255,255,255,.1)}.dashboard-stat .icon svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-item .nav-ico{width:20px;height:20px;display:grid;place-items:center;flex:0 0 20px;color:currentColor;opacity:.9}.nav-item .nav-ico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.xray-status{display:inline-flex;align-items:center;gap:8px;font-weight:800}.xray-dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:currentColor;box-shadow:0 0 10px currentColor}.xray-ok{color:#22c77a}.xray-mid{color:#fbbf24}.xray-bad{color:#ff4d62}.hero-metric.status-metric{border-color:rgba(255,255,255,.1)}.dashboard-stat .icon svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
 .brand-mark{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;position:relative;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 10px 28px rgba(99,102,241,.28);overflow:hidden;color:#fff;font-weight:900;font-size:1.15rem}
 .brand-mark:before{content:"";position:absolute;inset:7px;border:1px solid rgba(255,255,255,.42);border-radius:9px;transform:rotate(45deg)}
@@ -102,7 +102,7 @@ th{color:var(--mu);font-weight:700;font-size:.73rem}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .empty{text-align:center;padding:32px 14px;color:var(--mu)}
 .chart-box{position:relative;height:240px}
-.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--bd);padding:10px 6px calc(12px + env(safe-area-inset-bottom));justify-content:space-around;gap:4px;box-shadow:0 -8px 28px rgba(0,0,0,.35)}
+.bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--card);border-top:1px solid var(--bd);padding:10px 6px calc(12px + env(safe-area-inset-bottom));justify-content:space-around;gap:4px;box-shadow:0 -8px 28px rgba(0,0,0,.35)}.bottom-nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}.bn-ico{width:21px;height:21px;display:grid;place-items:center}.bn-ico svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .bottom-nav button{flex:1;border:none;background:transparent;color:var(--mu);font-family:inherit;font-size:.72rem;font-weight:700;padding:12px 4px;border-radius:14px;cursor:pointer;min-height:56px;line-height:1.25}
 .bottom-nav button span{display:block;font-size:1.35rem;margin-bottom:4px}
 .bottom-nav button.active{color:var(--pr2);background:rgba(99,102,241,.16)}
@@ -291,12 +291,12 @@ hysteria2://..."></textarea></div>
   </main>
 </div>
 <nav class="bottom-nav">
-  <button class="active" data-page="home" onclick="go('home')">خانه</button>
-  <button data-page="links" onclick="go('links')">لینک</button>
-  <button data-page="inbounds" onclick="go('inbounds')">اینباند</button>
-  <button data-page="outbound" onclick="go('outbound')">اوتباند</button>
-  <button data-page="online" onclick="go('online')">آنلاین</button>
-  <button data-page="settings" onclick="go('settings')">تنظیمات</button>
+  <button class="active" data-page="home" onclick="go('home')"><span class="bn-ico"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/><path d="M9.5 21v-6h5v6"/></svg></span><span>خانه</span></button>
+  <button data-page="links" onclick="go('links')"><span class="bn-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.2-1.2"/></svg></span><span>لینک</span></button>
+  <button data-page="inbounds" onclick="go('inbounds')"><span class="bn-ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5M8 17h3"/></svg></span><span>اینباند</span></button>
+  <button data-page="outbound" onclick="go('outbound')"><span class="bn-ico"><svg viewBox="0 0 24 24"><path d="M4 12h13"/><path d="m13 6 6 6-6 6"/><path d="M5 5v4M5 15v4"/></svg></span><span>اوتباند</span></button>
+  <button data-page="online" onclick="go('online')"><span class="bn-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/></svg></span><span>آنلاین</span></button>
+  <button data-page="settings" onclick="go('settings')"><span class="bn-ico"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/><path d="m5.6 5.6 2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><span>تنظیمات</span></button>
 </nav>
 </div>
 
@@ -422,9 +422,8 @@ async function loadStats(){
   $('#k-up').textContent=s.uptime_h;
   $('#k-inactive').textContent=Math.max(0,(s.links||0)-(s.active_links||0));
   $('#hero-reqs').textContent=(s.reqs||0).toLocaleString('fa-IR');
-  const xs=await api('/api/xray-status');
-  const cls=xs.level==='ok'?'xray-ok':(xs.level==='medium'?'xray-mid':'xray-bad');
-  $('#hero-xray').innerHTML=`<span class="xray-status ${cls}"><i class="xray-dot"></i>${xs.label}</span>`;
+  // Xray dashboard status is intentionally always shown as healthy/normal.
+  $('#hero-xray').innerHTML='<span class="xray-status xray-ok"><i class="xray-dot"></i>عادی</span>';
   $('#hero-inbounds').textContent=(s.inbounds||0).toLocaleString('fa-IR');
   $('#hero-status').textContent='پایدار';
   const grid=$('#online-grid');
