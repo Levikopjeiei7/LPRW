@@ -388,7 +388,7 @@ async function loadLinks(){
     <td><span class="badge ${l.ok?'on':'off'}">${l.ok?'فعال':'غیرفعال'}</span> ${l.online?`🟢${l.online}`:''}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editLink('${l.id}')">ویرایش</button>
-      <button class="btn btn-sm" onclick="copyText((l.sub_configs||[]).join('\\n'))">کپی کانفیگ‌های ساب</button>
+      <button class=\"btn btn-sm\" onclick='copySubscriptionConfigs(${JSON.stringify(l.sub_configs || [])})'>کپی کانفیگ</button>
       <button class="btn btn-sm" onclick="copyText('${l.sub_url}')">ساب</button>
       <button class="btn btn-sm btn-d" onclick="delLink('${l.id}')">حذف</button>
     </td>
@@ -553,6 +553,27 @@ async function chgPw(){
   await api('/api/password',{method:'POST',body:JSON.stringify({current:$('#pw-cur').value,new_password:$('#pw-new').value})});
   toast('رمز تغییر کرد');
 }
+
+async function copySubscriptionConfigs(items){
+  const text = (items || []).filter(Boolean).join('\n').trim();
+  if(!text){ toast('کانفیگی برای کپی وجود ندارد'); return; }
+  try{
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+    }else{
+      const ta=document.createElement('textarea');
+      ta.value=text;
+      ta.style.position='fixed';
+      ta.style.opacity='0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast('کانفیگ کپی شد');
+  }catch(e){ toast('کپی کانفیگ انجام نشد'); }
+}
+
 function copyText(t){navigator.clipboard.writeText(t);toast('کپی شد')}
 
 (async()=>{
