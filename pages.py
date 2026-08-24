@@ -74,12 +74,12 @@ button,input,select,textarea{font-family:inherit;font-size:.9rem;color:var(--tx)
 .main{padding:20px 24px 40px;max-width:1280px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:18px;flex-wrap:wrap}
 .topbar h1{font-size:1.35rem;font-weight:800}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-@media(max-width:1000px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:16px;max-width:760px}
 @media(max-width:560px){.kpis{grid-template-columns:1fr}}
-.kpi{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:16px}
+@media(max-width:560px){.kpis{grid-template-columns:1fr}}
+.kpi{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px 14px}
 .kpi .t{font-size:.75rem;color:var(--mu);font-weight:600;margin-bottom:6px}
-.kpi .v{font-size:1.4rem;font-weight:800}
+.kpi .v{font-size:1.2rem;font-weight:800}
 .panel{background:var(--card);border:1px solid var(--bd);border-radius:var(--r);padding:18px;margin-bottom:14px}
 .panel-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .panel-h h3{font-size:1rem;font-weight:800}
@@ -172,42 +172,6 @@ input,textarea,select{background:#0c1118!important;border:1px solid #2b3543!impo
     </div>
   </aside>
   
-<div class="dashboard-grid">
-  <div class="dashboard-stat stat-orange"><div class="label">ترافیک کل</div><div class="value" id="dash-traffic">—</div></div>
-  <div class="dashboard-stat stat-green"><div class="label">آنلاین</div><div class="value" id="dash-online">—</div></div>
-  <div class="dashboard-stat stat-purple"><div class="label">لینک فعال</div><div class="value" id="dash-active">—</div></div>
-  <div class="dashboard-stat stat-gray"><div class="label">آپ‌تایم</div><div class="value" id="dash-uptime">—</div></div>
-  <div class="dashboard-stat stat-red"><div class="label">لینک‌های غیر فعال</div><div class="value" id="dash-inactive">—</div></div>
-</div
-
-<div class="card chart-card">
-  <div class="section-title">ترافیک ساعتی</div>
-  <canvas id="traffic-hourly-chart" height="110"></canvas>
-</div>
-<script>
-(function(){
-  const c=document.getElementById('traffic-hourly-chart'); if(!c) return;
-  const ctx=c.getContext('2d');
-  const values=window.hourlyTraffic || [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-  const dpr=window.devicePixelRatio||1;
-  function draw(){
-    const w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,w,h);
-    const max=Math.max(1,...values), pad=24, step=(w-pad*2)/Math.max(1,values.length-1);
-    const pts=values.map((v,i)=>[pad+i*step,h-pad-(v/max)*(h-pad*2)]);
-    ctx.lineWidth=3;ctx.lineJoin='round';ctx.lineCap='round';
-    for(let i=1;i<pts.length;i++){
-      ctx.beginPath();ctx.moveTo(...pts[i-1]);ctx.lineTo(...pts[i]);
-      ctx.strokeStyle=values[i]>=values[i-1] ? '#24c77b' : '#ff4d5f';ctx.stroke();
-    }
-    ctx.font='11px sans-serif';ctx.fillStyle='#7f8a99';
-    values.forEach((v,i)=>{if(i%3===0)ctx.fillText(String(i).padStart(2,'0')+':00',pts[i][0]-10,h-5)});
-  }
-  draw();window.addEventListener('resize',draw);
-})();
-</script>
->
-
 <main class="main">
     <div class="topbar"><h1 id="page-title">داشبورد</h1><div class="acts" id="top-acts"></div></div>
 
@@ -426,6 +390,7 @@ async function loadStats(){
   $('#act-list').innerHTML=acts.slice(0,20).map(a=>`<li style="padding:8px 0;border-bottom:1px solid var(--bd);font-size:.84rem"><span style="color:var(--mu2);font-size:.75rem;margin-left:8px">${(a.t||'').slice(11,19)}</span>${a.msg}</li>`).join('');
   const labels=Object.keys(s.hourly||{});
   const data=Object.values(s.hourly||{});
+  if(!$('#chart')) return;
   if(chart)chart.destroy();
   chart=new Chart($('#chart'),{type:'line',data:{labels,datasets:[{label:'Bytes',data,borderColor:'#818cf8',backgroundColor:'rgba(99,102,241,.15)',fill:true,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#8b93a8'}},y:{ticks:{color:'#8b93a8'}}},responsive:true,maintainAspectRatio:false}});
 }
